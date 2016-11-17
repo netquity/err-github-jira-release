@@ -1,0 +1,9 @@
+[Core]
+Name = release
+Module = release.py
+
+[Documentation]
+Description = Automate releases between Jira and GitHub
+
+[Python]
+Version = 3
