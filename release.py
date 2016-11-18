@@ -116,6 +116,8 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         for k, v in projects_config.items():
             recurse_check_structure(projects_template['some-project'], v)
 
+        configuration.update({'projects': projects_config})
+
     @arg_botcmd('--project-key', dest='project_key', type=str.upper, required=True)
     def version(
             self,
