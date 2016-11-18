@@ -1,6 +1,8 @@
 # coding: utf-8
 import datetime
+import errno
 import logging
+import os
 import subprocess
 
 from errbot import BotPlugin, arg_botcmd
@@ -57,9 +59,26 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             self.warn_admins(message)
             return
 
+        self.setup_repos()
         self.jira_client = self.get_jira_client()  # pylint:disable=attribute-defined-outside-init
         self.github_client = self.get_github_client()  # pylint:disable=attribute-defined-outside-init
         super().activate()
+
+    def setup_repos(self):
+        """Clone the projects in the configuration into the `REPOS_ROOT` if they do not exist already."""
+        try:
+            os.makedirs(self.config['REPOS_ROOT'])
+        except OSError as exc:
+            if exc.errno != errno.EEXIST:
+                raise exc
+
+        for project_name in self.config['projects']:
+            if not os.path.exists(os.path.join(self.config['REPOS_ROOT'], project_name)):
+                # Possible race condition if folder somehow gets created between check and creation
+                Release.run_subprocess(
+                    ['git', 'clone', self.config['projects'][project_name]['repo_url']],
+                    cwd=self.config['REPOS_ROOT'],
+                )
 
     def get_configuration_template(self) -> str:
         return {
