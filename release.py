@@ -188,13 +188,12 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             for argv in [
                     # TODO: deal with merge conflicts in an interactive way
                     ['fetch', '-p'],
-                    ['checkout', 'master'],
+                    ['checkout', '-B', 'master', 'origin/master'],
                     ['checkout', '--merge', '-b', 'release-{}'.format(version_number), 'origin/develop'],
                     ['add', self.config['changelog_path'].format(project_root)],
                     ['commit', '-m', 'Release {}'.format(version_number)],
-                    ['checkout', 'master'],
-                    ['reset', '--hard', 'origin/master'],
-                    # TODO: make sure we're not losing hotfix stuff or other
+                    ['checkout', '-B', 'master', 'origin/master'],
+                    # TODO: very dangerous; make interactive in case of merge conflicts
                     ['merge', '-X', 'theirs', '--no-ff', '--no-edit', 'release-{}'.format(version_number)],
                     ['push', 'origin', 'master'],
             ]:
@@ -215,8 +214,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         """Merge the master branch back into develop after the release is performed."""
         for argv in [
                 ['fetch', '-p'],
-                ['checkout', 'develop'],
-                ['merge', '--no-ff', '--no-edit', 'origin/develop'],
+                ['checkout', '-B', 'develop', 'origin/develop'],
                 ['merge', '--no-ff', '--no-edit', 'origin/master'],
                 ['push', 'origin', 'develop'],
         ]:
