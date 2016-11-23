@@ -3,6 +3,7 @@ import datetime
 import errno
 import logging
 import os
+import sys
 import subprocess
 
 from errbot import BotPlugin, arg_botcmd
@@ -69,6 +70,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         try:
             os.makedirs(self.config['REPOS_ROOT'])
         except OSError as exc:
+            # If the error is that the directory already exists, we don't care about it
             if exc.errno != errno.EEXIST:
                 raise exc
 
@@ -147,26 +149,31 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             )
             release_notes = self.get_jira_release_notes(jira_new_version)
         except JIRAError:
-            exc_message = 'Unable to complete JIRA request for project_key=%s. Versioning aborted.' % project_key
-
-            try:
-                jira_new_version.delete()  # Remove version from issues it's attached to
-            except JIRAError:
-                exc_message = (
-                    'Unable to complete JIRA request for project_key={} and unable to clean up new version={}'.format(
-                        project_key,
-                        jira_new_version.name,
-                    )
-                )
-
+            exc_message = Release.delete_jira_version(
+                project_key,
+                jira_new_version,
+            )
             self.log.exception(
                 exc_message,
             )
             return exc_message
 
         self.update_changelog_file(project_root, release_notes)
-        commit_hash = self.git_merge_and_create_release_commit(project_root, jira_new_version.name)
 
+        try:
+            commit_hash = self.git_merge_and_create_release_commit(project_root, jira_new_version.name)
+        except subprocess.CalledProcessError as exc:
+            self.log.exception(
+                'Unable to merge release branch to master and create release commit.'
+            )
+            exc_message = Release.delete_jira_version(
+                project_key,
+                jira_new_version,
+                'git',
+            )
+            return exc_message
+
+        # TODO: clean up if this fails
         self.github_client.get_organization(
             self.config['projects'][project_name]['github_org'],
         ).get_repo(
@@ -184,6 +191,28 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         )
 
         Release.git_merge_master_to_develop(project_root)
+        # TODO: ouput release notes and links to JIRA resource and GH release
+
+    @staticmethod
+    def delete_jira_version(project_key: str, version: 'jira.resources.Version', failed_command: str='JIRA'):
+        """Delete a JIRA version.
+
+        Used to undo created versions when subsequent operations fail."""
+        try:
+            version.delete()  # Remove version from issues it's attached to
+        except JIRAError:
+            exc_message = (
+                'Unable to complete JIRA request for project_key={} and unable to clean up new version={}'.format(
+                    project_key,
+                    version.name,
+                )
+            )
+            return exc_message
+
+        return 'Unable to complete %s operation for project_key=%s. JIRA version deleted.' % (
+            failed_command,
+            project_key,
+        )
 
     def update_changelog_file(self, project_root: str, release_notes: str):
         """Prepend the given release notes to CHANGELOG.md."""
@@ -210,20 +239,25 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     # TODO: deal with merge conflicts in an interactive way
                     ['fetch', '-p'],
                     ['checkout', '-B', 'master', 'origin/master'],
-                    ['checkout', '--merge', '-b', 'release-{}'.format(version_number), 'origin/develop'],
+                    ['checkout', '--merge', '-B', 'release-{}'.format(version_number), 'origin/develop'],
                     ['add', self.config['changelog_path'].format(project_root)],
                     ['commit', '-m', 'Release {}'.format(version_number)],
                     ['checkout', '-B', 'master', 'origin/master'],
-                    # TODO: very dangerous; make interactive in case of merge conflicts
-                    ['merge', '-X', 'theirs', '--no-ff', '--no-edit', 'release-{}'.format(version_number)],
+                    ['merge', '--no-ff', '--no-edit', 'release-{}'.format(version_number)],
                     ['push', 'origin', 'master'],
             ]:
+                last_called = ' '.join(argv)
                 Release.run_subprocess(
                     ['git'] + argv,
                     cwd=project_root,
                 )
-        except:  # TODO: exc types
-            raise NotImplementedError
+        except subprocess.CalledProcessError as exc:
+            self.log.exception(
+                'Failed git command=%s, output=%s',
+                last_called,
+                sys.exc_info()[1].stdout,
+            )
+            raise exc
 
         return Release.run_subprocess(
             ['git', 'rev-parse', 'master'],
