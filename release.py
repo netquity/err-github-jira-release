@@ -141,7 +141,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 ),
                 project=project_key,
                 released=True,
-                releaseDate=datetime.datetime.now().date(),
+                releaseDate=datetime.datetime.now().date().isoformat(),
             )
             self.set_jira_fix_version(
                 project_key,
