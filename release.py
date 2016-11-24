@@ -158,10 +158,8 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             )
             return exc_message
 
-        self.update_changelog_file(project_root, release_notes)
-
         try:
-            commit_hash = self.git_merge_and_create_release_commit(project_root, jira_new_version.name)
+            commit_hash = self.git_merge_and_create_release_commit(project_root, jira_new_version.name, release_notes)
         except subprocess.CalledProcessError as exc:
             self.log.exception(
                 'Unable to merge release branch to master and create release commit.'
@@ -174,7 +172,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             return exc_message
 
         # TODO: clean up if this fails
-        self.github_client.get_organization(
+        release = self.github_client.get_organization(
             self.config['projects'][project_name]['github_org'],
         ).get_repo(
             project_name,
@@ -214,7 +212,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             project_key,
         )
 
-    def update_changelog_file(self, project_root: str, release_notes: str):
+    def update_changelog_file(self, project_root: str, release_notes: str) -> str:
         """Prepend the given release notes to CHANGELOG.md."""
         # TODO: exceptions
         changelog_filename = self.config['changelog_path'].format(project_root)
@@ -226,8 +224,9 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         except OSError as exc:
             self.log.exception('An unknown error occurred while updating the changelog file.')
             raise exc
+        return changelog_filename
 
-    def git_merge_and_create_release_commit(self, project_root: str, version_number: str) -> str:
+    def git_merge_and_create_release_commit(self, project_root: str, version_number: str, release_notes: str) -> str:
         """Wrap subprocess calls with some project-specific defaults.
 
         :param project_root:
@@ -238,10 +237,9 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             for argv in [
                     # TODO: deal with merge conflicts in an interactive way
                     ['fetch', '-p'],
-                    ['checkout', '-B', 'master', 'origin/master'],
                     ['checkout', '--merge', '-B', 'release-{}'.format(version_number), 'origin/develop'],
-                    ['add', self.config['changelog_path'].format(project_root)],
-                    ['commit', '-m', 'Release {}'.format(version_number)],
+                    ['add', self.update_changelog_file(project_root, release_notes)],
+                    ['commit', '-m', '"Release {}"'.format(version_number)],
                     ['checkout', '-B', 'master', 'origin/master'],
                     ['merge', '--no-ff', '--no-edit', 'release-{}'.format(version_number)],
                     ['push', 'origin', 'master'],
