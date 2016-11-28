@@ -134,10 +134,11 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             project_root = self.get_project_root(project_name)
 
             jira_previous_version = self.get_jira_latest_version(project_key)
+            release_type = self.get_jira_release_type(project_key)
             jira_new_version = self.jira_client.create_version(
                 Release.bump_version(
                     jira_previous_version.name,
-                    self.get_jira_release_type(project_key)
+                    release_type,
                 ),
                 project=project_key,
                 released=True,
@@ -189,7 +190,48 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         )
 
         Release.git_merge_master_to_develop(project_root)
-        # TODO: ouput release notes and links to JIRA resource and GH release
+        return self.send_card(
+            in_reply_to=msg,
+            pretext='I was able to complete the %s release for you.' % project_name,
+            fields=(
+                ('Project Key', project_key),
+                ('New Version', 'v' + jira_new_version.name),
+                ('Release Type', release_type),
+                (
+                    'JIRA Release',
+                    Release.get_jira_release_url(
+                        self.config['JIRA_URL'],
+                        project_key,
+                        jira_new_version.id,
+                    ),
+                ),
+                (
+                    'GitHub Release',
+                    Release.get_github_release_url(
+                        self.config['projects'][project_name]['github_org'],
+                        project_name,
+                        jira_new_version.name,
+                    ),
+                ),
+            ),
+            color='green',
+        )
+
+    @staticmethod
+    def get_github_release_url(github_org: str, project_name: str, new_version_name: str) -> str:
+        return 'https://github.com/{github_org}/{project_name}/releases/tag/{new_version_name}'.format(
+            github_org=github_org,
+            project_name=project_name,
+            new_version_name=new_version_name,
+        )
+
+    @staticmethod
+    def get_jira_release_url(jira_url: str, project_key: str, version_id: int) -> str:
+        return '{jira_url}/projects/{project_key}/versions/{version_id}/tab/release-report-done'.format(
+            jira_url=jira_url,
+            project_key=project_key,
+            version_id=version_id,
+        )
 
     @staticmethod
     def delete_jira_version(project_key: str, version: 'jira.resources.Version', failed_command: str='JIRA'):
@@ -239,7 +281,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     ['fetch', '-p'],
                     ['checkout', '--merge', '-B', 'release-{}'.format(version_number), 'origin/develop'],
                     ['add', self.update_changelog_file(project_root, release_notes)],
-                    ['commit', '-m', '"Release {}"'.format(version_number)],
+                    ['commit', '-m', 'Release {}'.format(version_number)],
                     ['checkout', '-B', 'master', 'origin/master'],
                     ['merge', '--no-ff', '--no-edit', 'release-{}'.format(version_number)],
                     ['push', 'origin', 'master'],
