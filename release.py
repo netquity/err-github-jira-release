@@ -192,7 +192,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         Release.git_merge_master_to_develop(project_root)
         return self.send_card(
             in_reply_to=msg,
-            pretext='I was able to complete the %s release for you.' % project_name,
+            summary='I was able to complete the %s release for you.' % project_name,
             fields=(
                 ('Project Key', project_key),
                 ('New Version', 'v' + jira_new_version.name),
