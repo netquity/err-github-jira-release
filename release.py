@@ -178,7 +178,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         ).get_repo(
             project_name,
         ).create_git_tag_and_release(
-            tag=jira_new_version.name,
+            tag='v' + jira_new_version.name,
             tag_message='v' + jira_new_version.name,
             release_name='{} - Version {}'.format(project_name, jira_new_version.name),
             release_message=release_notes,
@@ -210,7 +210,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     Release.get_github_release_url(
                         self.config['projects'][project_name]['github_org'],
                         project_name,
-                        jira_new_version.name,
+                        'v' + jira_new_version.name,
                     ),
                 ),
             ),
@@ -279,7 +279,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             for argv in [
                     # TODO: deal with merge conflicts in an interactive way
                     ['fetch', '-p'],
-                    ['checkout', '--merge', '-B', 'release-{}'.format(version_number), 'origin/develop'],
+                    ['checkout', '-B', 'release-{}'.format(version_number), 'origin/develop'],
                     ['add', self.update_changelog_file(project_root, release_notes)],
                     ['commit', '-m', 'Release {}'.format(version_number)],
                     ['checkout', '-B', 'master', 'origin/master'],
