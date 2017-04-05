@@ -172,19 +172,27 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             )
             return exc_message
 
-        # TODO: clean up if this fails
-        release = self.github_client.get_organization(
+        repo = self.github_client.get_organization(
             self.config['projects'][project_name]['github_org'],
         ).get_repo(
             project_name,
-        ).create_git_tag_and_release(
+        )
+
+        tag = repo.create_git_tag(
             tag='v' + jira_new_version.name,
-            tag_message='v' + jira_new_version.name,
-            release_name='{} - Version {}'.format(project_name, jira_new_version.name),
-            release_message=release_notes,
+            message='v' + jira_new_version.name,
             object=commit_hash,
             type='commit',
             # tagger=github.GithubObject.NotSet,  # TODO: add some author information
+        )
+        ref = repo.create_git_ref(
+            'refs/tags/{}'.format(tag.tag),
+            tag.sha,
+        )
+        release = repo.create_git_release(
+            tag=tag.tag,
+            name='{} - Version {}'.format(project_name, jira_new_version.name),
+            message=release_notes,
             draft=False,
             prerelease=False,
         )
