@@ -178,19 +178,16 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             project_name,
         )
 
-        tag = repo.create_git_tag(
-            tag='v' + jira_new_version.name,
-            message='v' + jira_new_version.name,
-            object=commit_hash,
-            type='commit',
-            # tagger=github.GithubObject.NotSet,  # TODO: add some author information
+        self.git_create_tag(
+            project_root,
+            jira_new_version.name,
         )
         ref = repo.create_git_ref(
-            'refs/tags/{}'.format(tag.tag),
-            tag.sha,
+            'refs/tags/{}'.format('v' + jira_new_version.name),
+            commit_hash,
         )
         release = repo.create_git_release(
-            tag=tag.tag,
+            tag='v' + jira_new_version.name,
             name='{} - Version {}'.format(project_name, jira_new_version.name),
             message=release_notes,
             draft=False,
@@ -275,6 +272,24 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             self.log.exception('An unknown error occurred while updating the changelog file.')
             raise exc
         return changelog_filename
+
+    def git_create_tag(self, project_root: str, version_number: str):
+        """Create a signed tag using the given version number
+
+        :param project_root:
+        :param version_number:
+        """
+        try:
+            Release.run_subprocess(
+                ['git', 'tag', '-s', 'v' + version_number, '-m', 'v' + version_number,],
+                cwd=project_root,
+            )
+        except subprocess.CalledProcessError as exc:
+            self.log.exception(
+                'Failed to create git tag, output=%s',
+                sys.exc_info()[1].stdout,
+            )
+            raise exc
 
     def git_merge_and_create_release_commit(self, project_root: str, version_number: str, release_notes: str) -> str:
         """Wrap subprocess calls with some project-specific defaults.
