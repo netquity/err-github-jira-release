@@ -160,7 +160,8 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             return exc_message
 
         try:
-            commit_hash = self.git_merge_and_create_release_commit(project_root, jira_new_version.name, release_notes)
+            self.git_merge_and_create_release_commit(project_root, jira_new_version.name, release_notes)
+            commit_hash = Release.git_get_rev_hash('master', project_root)
         except subprocess.CalledProcessError as exc:
             self.log.exception(
                 'Unable to merge release branch to master and create release commit.'
@@ -279,17 +280,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         :param project_root:
         :param version_number:
         """
-        try:
-            Release.run_subprocess(
-                ['git', 'tag', '-s', 'v' + version_number, '-m', 'v' + version_number,],
-                cwd=project_root,
-            )
-        except subprocess.CalledProcessError as exc:
-            self.log.exception(
-                'Failed to create git tag, output=%s',
-                sys.exc_info()[1].stdout,
-            )
-            raise exc
+        self.git_execute_command(project_root, ['tag', '-s', 'v' + version_number, '-m', 'v' + version_number,])
 
     def git_merge_and_create_release_commit(self, project_root: str, version_number: str, release_notes: str) -> str:
         """Wrap subprocess calls with some project-specific defaults.
@@ -298,48 +289,53 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         :param version_number:
         :return: Release commit hash.
         """
+        for git_command in [
+                # TODO: deal with merge conflicts in an interactive way
+                ['fetch', '-p'],
+                ['checkout', '-B', 'release-{}'.format(version_number), 'origin/develop'],
+                ['add', self.update_changelog_file(project_root, release_notes)],
+                ['commit', '-m', 'Release {}'.format(version_number)],
+                ['checkout', '-B', 'master', 'origin/master'],
+                ['merge', '--no-ff', '--no-edit', 'release-{}'.format(version_number)],
+                ['push', 'origin', 'master'],
+        ]:
+            self.git_execute_command(project_root, git_command)
+
+    def git_get_rev_hash(self, ref: str, project_root: str) -> str:
+        """Return the SHA1 hash for a given ref
+
+        :param ref:
+        :param project_root:
+        :return: Revision pointer.
+        """
+        return self.git_execute_command(
+            project_root, ['rev-parse', ref]
+        ).stdout.strip()  # Get rid of the newline character at the end
+
+    def git_execute_command(self, project_root: str, git_command: list):
         try:
-            for argv in [
-                    # TODO: deal with merge conflicts in an interactive way
-                    ['fetch', '-p'],
-                    ['checkout', '-B', 'release-{}'.format(version_number), 'origin/develop'],
-                    ['add', self.update_changelog_file(project_root, release_notes)],
-                    ['commit', '-m', 'Release {}'.format(version_number)],
-                    ['checkout', '-B', 'master', 'origin/master'],
-                    ['merge', '--no-ff', '--no-edit', 'release-{}'.format(version_number)],
-                    ['push', 'origin', 'master'],
-            ]:
-                last_called = ' '.join(argv)
-                Release.run_subprocess(
-                    ['git'] + argv,
-                    cwd=project_root,
-                )
+            return Release.run_subprocess(
+                ['git'] + git_command,
+                cwd=project_root,
+            )
         except subprocess.CalledProcessError as exc:
             self.log.exception(
                 'Failed git command=%s, output=%s',
-                last_called,
+                git_command,
                 sys.exc_info()[1].stdout,
             )
             raise exc
 
-        return Release.run_subprocess(
-            ['git', 'rev-parse', 'master'],
-            cwd=project_root,
-        ).stdout.strip()  # Get rid of the newline character at the end
-
     @staticmethod
     def git_merge_master_to_develop(project_root: str):  # TODO: accept commit hash?
         """Merge the master branch back into develop after the release is performed."""
-        for argv in [
+        for git_command in [
                 ['fetch', '-p'],
                 ['checkout', '-B', 'develop', 'origin/develop'],
                 ['merge', '--no-ff', '--no-edit', 'origin/master'],
                 ['push', 'origin', 'develop'],
         ]:
-            Release.run_subprocess(
-                ['git'] + argv,
-                cwd=project_root,
-            )
+            self.git_execute_command(project_root, git_command)
 
     def get_project_root(self, project_name: str) -> str:
         """Get the root of the project's Git repo locally."""
