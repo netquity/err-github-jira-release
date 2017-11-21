@@ -3,11 +3,11 @@ import datetime
 import errno
 import logging
 import os
-import sys
 import subprocess
 
 from errbot import BotPlugin, arg_botcmd, ValidationException
 from errbot.botplugin import recurse_check_structure
+from gitclient import GitClient
 from jinja2 import Environment, FileSystemLoader
 
 logger = logging.getLogger(__file__)
@@ -77,7 +77,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         for project_name in self.config['projects']:
             if not os.path.exists(os.path.join(self.config['REPOS_ROOT'], project_name)):
                 # Possible race condition if folder somehow gets created between check and creation
-                Release.run_subprocess(
+                utils.run_subprocess(
                     ['git', 'clone', self.config['projects'][project_name]['repo_url']],
                     cwd=self.config['REPOS_ROOT'],
                 )
@@ -127,11 +127,12 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             project_key: str,
     ) -> str:
         """Perform a version release to GitHub using issues from JIRA."""
+        from gitclient import GitCommandError
         # Check out latest
         # TODO: check validity of given version number
         try:
             project_name = self.jira_client.project(project_key).name
-            project_root = self.get_project_root(project_name)
+            git = GitClient(self.get_project_root(project_name), self.log)
 
             jira_previous_version = self.get_jira_latest_version(project_key)
             release_type = self.get_jira_release_type(project_key)
@@ -160,9 +161,13 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             return exc_message
 
         try:
-            self.git_merge_and_create_release_commit(project_root, jira_new_version.name, release_notes)
-            commit_hash = Release.git_get_rev_hash('master', project_root)
-        except subprocess.CalledProcessError as exc:
+            git.merge_and_create_release_commit(
+                jira_new_version.name,
+                release_notes,
+                self.config['changelog_path'].format(self.root)
+            )
+            commit_hash = git.get_rev_hash('master')
+        except GitCommandError as exc:  # TODO: should the exception be changed to GitCommandError?
             self.log.exception(
                 'Unable to merge release branch to master and create release commit.'
             )
@@ -179,8 +184,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             project_name,
         )
 
-        self.git_create_tag(
-            project_root,
+        git.create_tag(
             jira_new_version.name,
         )
         ref = repo.create_git_ref(
@@ -195,7 +199,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             prerelease=False,
         )
 
-        Release.git_merge_master_to_develop(project_root)
+        git.merge_master_to_develop()
         return self.send_card(
             in_reply_to=msg,
             summary='I was able to complete the %s release for you.' % project_name,
@@ -259,83 +263,6 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             failed_command,
             project_key,
         )
-
-    def update_changelog_file(self, project_root: str, release_notes: str) -> str:
-        """Prepend the given release notes to CHANGELOG.md."""
-        # TODO: exceptions
-        changelog_filename = self.config['changelog_path'].format(project_root)
-        try:
-            with open(changelog_filename, 'r') as changelog:
-                original_contents = changelog.read()
-            with open(changelog_filename, 'w') as changelog:
-                changelog.write(release_notes + "\n" + original_contents)
-        except OSError as exc:
-            self.log.exception('An unknown error occurred while updating the changelog file.')
-            raise exc
-        return changelog_filename
-
-    def git_create_tag(self, project_root: str, version_number: str):
-        """Create a signed tag using the given version number
-
-        :param project_root:
-        :param version_number:
-        """
-        self.git_execute_command(project_root, ['tag', '-s', 'v' + version_number, '-m', 'v' + version_number,])
-
-    def git_merge_and_create_release_commit(self, project_root: str, version_number: str, release_notes: str) -> str:
-        """Wrap subprocess calls with some project-specific defaults.
-
-        :param project_root:
-        :param version_number:
-        :return: Release commit hash.
-        """
-        for git_command in [
-                # TODO: deal with merge conflicts in an interactive way
-                ['fetch', '-p'],
-                ['checkout', '-B', 'release-{}'.format(version_number), 'origin/develop'],
-                ['add', self.update_changelog_file(project_root, release_notes)],
-                ['commit', '-m', 'Release {}'.format(version_number)],
-                ['checkout', '-B', 'master', 'origin/master'],
-                ['merge', '--no-ff', '--no-edit', 'release-{}'.format(version_number)],
-                ['push', 'origin', 'master'],
-        ]:
-            self.git_execute_command(project_root, git_command)
-
-    def git_get_rev_hash(self, ref: str, project_root: str) -> str:
-        """Return the SHA1 hash for a given ref
-
-        :param ref:
-        :param project_root:
-        :return: Revision pointer.
-        """
-        return self.git_execute_command(
-            project_root, ['rev-parse', ref]
-        ).stdout.strip()  # Get rid of the newline character at the end
-
-    def git_execute_command(self, project_root: str, git_command: list):
-        try:
-            return Release.run_subprocess(
-                ['git'] + git_command,
-                cwd=project_root,
-            )
-        except subprocess.CalledProcessError as exc:
-            self.log.exception(
-                'Failed git command=%s, output=%s',
-                git_command,
-                sys.exc_info()[1].stdout,
-            )
-            raise exc
-
-    @staticmethod
-    def git_merge_master_to_develop(project_root: str):  # TODO: accept commit hash?
-        """Merge the master branch back into develop after the release is performed."""
-        for git_command in [
-                ['fetch', '-p'],
-                ['checkout', '-B', 'develop', 'origin/develop'],
-                ['merge', '--no-ff', '--no-edit', 'origin/master'],
-                ['push', 'origin', 'develop'],
-        ]:
-            self.git_execute_command(project_root, git_command)
 
     def get_project_root(self, project_name: str) -> str:
         """Get the root of the project's Git repo locally."""
@@ -483,15 +410,3 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         version_array[release_type+1:] = [0] * (PATCH - release_type)
 
         return '.'.join(str(version) for version in version_array)
-
-    @staticmethod
-    def run_subprocess(args: list, cwd: str=None):
-        """Run the local command described by `args` with some defaults applied."""
-        return subprocess.run(
-            args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,  # Combine out/err into stdout; stderr will be None
-            universal_newlines=True,
-            check=True,
-            cwd=cwd,
-        )
