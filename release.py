@@ -164,7 +164,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             git.merge_and_create_release_commit(
                 jira_new_version.name,
                 release_notes,
-                self.config['changelog_path'].format(self.root)
+                self.config['changelog_path'].format(git.root)
             )
             commit_hash = git.get_rev_hash('master')
         except GitCommandError as exc:  # TODO: should the exception be changed to GitCommandError?
