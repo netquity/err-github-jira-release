@@ -28,3 +28,18 @@ def run_subprocess(args: list, cwd: str=None):
         check=True,
         cwd=cwd,
     )
+
+
+def bump_version(version: str, release_type: str) -> str:
+    """Perform a version bump in accordance with semver.org."""
+    MAJOR = 0
+    MINOR = 1
+    PATCH = 2
+
+    # TODO: exceptions
+    release_type = vars()[release_type.upper()]
+    version_array = [int(x) for x in version.split('.', 2)]
+    version_array[release_type] += 1
+    version_array[release_type+1:] = [0] * (PATCH - release_type)
+
+    return '.'.join(str(version) for version in version_array)

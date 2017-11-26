@@ -1,14 +1,13 @@
 # coding: utf-8
-import datetime
 import errno
 import logging
 import os
-import subprocess
 
 from errbot import BotPlugin, arg_botcmd, ValidationException
 from errbot.botplugin import recurse_check_structure
 from gitclient import GitClient
-from jinja2 import Environment, FileSystemLoader
+from jiraclient import JiraClient
+import utils
 
 logger = logging.getLogger(__file__)
 
@@ -17,14 +16,6 @@ try:
     from github import Github
 except ImportError:
     logger.error("Please install 'jira' and 'pygithub' Python packages")
-
-
-class JIRAVersionError(Exception):
-    """Could not find the given JIRA version resource."""
-
-
-class NoJIRAIssuesFoundError(Exception):
-    """No JIRA issues match the given search parameters."""
 
 
 class Release(BotPlugin):  # pylint:disable=too-many-ancestors
@@ -61,7 +52,6 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             return
 
         self.setup_repos()
-        self.jira_client = self.get_jira_client()  # pylint:disable=attribute-defined-outside-init
         self.github_client = self.get_github_client()  # pylint:disable=attribute-defined-outside-init
         super().activate()
 
@@ -131,29 +121,20 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         # Check out latest
         # TODO: check validity of given version number
         try:
-            project_name = self.jira_client.project(project_key).name
+            jira = JiraClient(self.jira_config)
+            project_name = jira.get_project_name()
             git = GitClient(self.get_project_root(project_name), self.log)
 
-            jira_previous_version = self.get_jira_latest_version(project_key)
-            release_type = self.get_jira_release_type(project_key)
-            jira_new_version = self.jira_client.create_version(
-                Release.bump_version(
-                    jira_previous_version.name,
-                    release_type,
-                ),
-                project=project_key,
-                released=True,
-                releaseDate=datetime.datetime.now().date().isoformat(),
+            release_type = jira.get_release_type()
+            new_jira_version = jira.create_version(release_type)
+            jira.set_fix_version(
+                new_jira_version.name,
             )
-            self.set_jira_fix_version(
-                project_key,
-                jira_new_version.name,
-            )
-            release_notes = self.get_jira_release_notes(jira_new_version)
+            release_notes = jira.get_release_notes(new_jira_version)
         except JIRAError:
-            exc_message = Release.delete_jira_version(
+            exc_message = jira.delete_version(
                 project_key,
-                jira_new_version,
+                new_jira_version,
             )
             self.log.exception(
                 exc_message,
@@ -162,7 +143,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
 
         try:
             git.merge_and_create_release_commit(
-                jira_new_version.name,
+                new_jira_version.name,
                 release_notes,
                 self.config['changelog_path'].format(git.root)
             )
@@ -171,9 +152,9 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             self.log.exception(
                 'Unable to merge release branch to master and create release commit.'
             )
-            exc_message = Release.delete_jira_version(
+            exc_message = jira.delete_version(
                 project_key,
-                jira_new_version,
+                new_jira_version,
                 'git',
             )
             return exc_message
@@ -185,15 +166,15 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         )
 
         git.create_tag(
-            jira_new_version.name,
+            new_jira_version.name,
         )
-        ref = repo.create_git_ref(
-            'refs/tags/{}'.format('v' + jira_new_version.name),
+        repo.create_git_ref(
+            'refs/tags/{}'.format('v' + new_jira_version.name),
             commit_hash,
         )
-        release = repo.create_git_release(
-            tag='v' + jira_new_version.name,
-            name='{} - Version {}'.format(project_name, jira_new_version.name),
+        repo.create_git_release(
+            tag='v' + new_jira_version.name,
+            name='{} - Version {}'.format(project_name, new_jira_version.name),
             message=release_notes,
             draft=False,
             prerelease=False,
@@ -205,14 +186,12 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             summary='I was able to complete the %s release for you.' % project_name,
             fields=(
                 ('Project Key', project_key),
-                ('New Version', 'v' + jira_new_version.name),
+                ('New Version', 'v' + new_jira_version.name),
                 ('Release Type', release_type),
                 (
                     'JIRA Release',
-                    Release.get_jira_release_url(
-                        self.config['JIRA_URL'],
-                        project_key,
-                        jira_new_version.id,
+                    jira.get_release_url(
+                        new_jira_version.id,
                     ),
                 ),
                 (
@@ -220,7 +199,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     Release.get_github_release_url(
                         self.config['projects'][project_name]['github_org'],
                         project_name,
-                        'v' + jira_new_version.name,
+                        'v' + new_jira_version.name,
                     ),
                 ),
             ),
@@ -235,178 +214,20 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             new_version_name=new_version_name,
         )
 
-    @staticmethod
-    def get_jira_release_url(jira_url: str, project_key: str, version_id: int) -> str:
-        return '{jira_url}/projects/{project_key}/versions/{version_id}/tab/release-report-done'.format(
-            jira_url=jira_url,
-            project_key=project_key,
-            version_id=version_id,
-        )
-
-    @staticmethod
-    def delete_jira_version(project_key: str, version: 'jira.resources.Version', failed_command: str='JIRA'):
-        """Delete a JIRA version.
-
-        Used to undo created versions when subsequent operations fail."""
-        try:
-            version.delete()  # Remove version from issues it's attached to
-        except JIRAError:
-            exc_message = (
-                'Unable to complete JIRA request for project_key={} and unable to clean up new version={}'.format(
-                    project_key,
-                    version.name,
-                )
-            )
-            return exc_message
-
-        return 'Unable to complete %s operation for project_key=%s. JIRA version deleted.' % (
-            failed_command,
-            project_key,
-        )
-
     def get_project_root(self, project_name: str) -> str:
         """Get the root of the project's Git repo locally."""
         return self.config['REPOS_ROOT'] + project_name
 
-    def get_jira_latest_version(
-            self,
-            project_key: str,
-    ) -> 'jira.resources.Version':
-        """Get the latest version resource from JIRA.
-
-        Assumes all existing versions are released."""
-        try:
-            return self.jira_client.project_versions(project_key)[-1]
-        except (JIRAError, IndexError) as exc:
-            self.log.exception(
-                'Unable to get the latest JIRA version resource for project_key=%s',
-                project_key,
-            )
-            raise exc
-
-    def get_jira_release_type(self, project_key: str):
-        """Get the highest Release Type of all closed issues without a Fix Version."""
-        try:
-            for release_type in ['Major', 'Minor', 'Patch']:
-                if len(
-                        self.jira_client.search_issues(
-                            jql_str=(
-                                'project = {project_key} '
-                                'AND status = "closed" '
-                                'AND fixVersion = EMPTY '
-                                'AND resolution in ("Fixed", "Done") '
-                                'AND "Release Type" = "{release_type}" '
-                            ).format(
-                                project_key=project_key.upper(),
-                                release_type=release_type,
-                            ),
-                        )
-                ) > 0:
-                    return release_type
-        except JIRAError as exc:
-            self.log.exception(
-                'Unknown JIRA error occurred when trying to determine release type for project_key=%s',
-                project_key,
-            )
-            raise exc
-
-        raise NoJIRAIssuesFoundError(
-            'Could not find any closed issues without a fixVersion in project_key=%s' % project_key
-        )
-
-    def get_jira_release_notes(self, version: 'jira.resources.Version') -> str:
-        """Produce release notes for a JIRA project version."""
-        env = Environment(
-            loader=FileSystemLoader(self.config['TEMPLATE_DIR']),
-            lstrip_blocks=True,
-            trim_blocks=True,
-        )
-        template = env.get_template('release_notes.html')
-
-        project_name = self.jira_client.project(version.projectId).name
-        try:
-            return template.render({
-                'project_name': project_name,
-                'version_number': version.name,
-                'issues': self.jira_client.search_issues(
-                    jql_str=(
-                        'project = {project_name} '
-                        'AND fixVersion = "{version_name}" '
-                        'ORDER BY issuetype ASC, updated DESC'
-                    ).format(
-                        project_name=project_name,
-                        version_name=version.name,
-                    ),
-                ),
-            })
-        except JIRAError as exc:
-            logger.exception(
-                'Could not retrieve issues for %s v%s.',
-                project_name,
-                version.name,
-            )
-            raise exc
-
-    def set_jira_fix_version(self, project_key: str, new_version: str):
-        """Set the fixVersion on all of the closed tickets without one."""
-        # TODO: exceptions
-
-        for issue in self.jira_client.search_issues(
-                jql_str=(
-                    'project = "{}" '
-                    'AND status = "closed" '
-                    'AND resolution in ("Fixed", "Done") '
-                    'AND fixVersion = EMPTY'
-                ).format(
-                    project_key.upper(),
-                ),
-        ):
-            self.jira_client.transition_issue(issue, 'Reopen Issue')
-
-            issue.update(
-                fixVersions=[
-                    {
-                        # Add new fix version to the existing versions
-                        'add': {'name': new_version}
-                    }
-                ]
-            )
-
-            self.jira_client.transition_issue(issue, 'Close Issue')
-
-    def get_jira_client(self) -> JIRA:
-        """Get an instance of the JIRA client using the plugins configuration for authentication."""
-        jira_url = self.config['JIRA_URL']
-
-        try:
-            client = JIRA(
-                server=jira_url,
-                basic_auth=(
-                    self.config['JIRA_USER'],
-                    self.config['JIRA_PASS'],
-                ),
-            )
-            self.log.info('Initialized JIRA client at URL %s', jira_url)
-            return client
-        except JIRAError as exc:
-            self.log.exception('Unable to initialize JIRA client at URL=%s', jira_url)
-            raise exc
+    @property
+    def jira_config(self):
+        return {
+            'URL': self.config['JIRA_URL'],
+            'USER': self.config['JIRA_USER'],
+            'PASS': self.config['JIRA_PASS'],
+            'PROJECT_KEY': self.config['PROJECT_KEY'],
+            'TEMPLATE_DIR': self.config['TEMPLATE_DIR'],
+        }
 
     def get_github_client(self) -> Github:
         """Get an instance of the PyGitHub client using the plugins configuration for authentication."""
         return Github(self.config['GITHUB_TOKEN'])
-
-    @staticmethod
-    def bump_version(version: str, release_type: str) -> str:
-        """Perform a version bump in accordance with semver.org."""
-        MAJOR = 0
-        MINOR = 1
-        PATCH = 2
-
-        # TODO: exceptions
-        release_type = vars()[release_type.upper()]
-        version_array = [int(x) for x in version.split('.', 2)]
-        version_array[release_type] += 1
-        version_array[release_type+1:] = [0] * (PATCH - release_type)
-
-        return '.'.join(str(version) for version in version_array)
