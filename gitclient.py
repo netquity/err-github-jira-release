@@ -3,8 +3,6 @@ import os
 import sys
 import subprocess
 
-import utils
-
 from github import Github
 
 logger = logging.getLogger(__file__)
@@ -28,8 +26,9 @@ class GitClient:
 
     def execute_command(self, git_command: list):
         """Execute a git command"""
+        from utils import run_subprocess
         try:
-            return utils.run_subprocess(
+            return run_subprocess(
                 ['git'] + git_command,
                 cwd=self.root,
             )
@@ -70,6 +69,7 @@ class GitClient:
 
     def merge_and_create_release_commit(self, release_notes: str, changelog_path: str):
         """Create a release commit based on origin/develop and merge it to master"""
+        from utils import update_changelog_file
         for git_command in [
                 # TODO: deal with merge conflicts in an interactive way
                 ['fetch', '-p'],
@@ -77,7 +77,7 @@ class GitClient:
         ]:
             self.execute_command(git_command)
 
-        utils.update_changelog_file(
+        update_changelog_file(
             changelog_path,
             release_notes,
             logger,
