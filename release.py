@@ -120,7 +120,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         # Check out latest
         # TODO: check validity of given version number
         try:
-            jira = JiraClient(self.jira_config)
+            jira = JiraClient(self.get_jira_config(project_key))
             project_name = jira.get_project_name()
 
             release_type = jira.get_release_type()
@@ -184,14 +184,13 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         """Get the root of the project's Git repo locally."""
         return self.config['REPOS_ROOT'] + project_name
 
-    @property
-    def jira_config(self) -> dict:
+    def get_jira_config(self, project_key: str) -> dict:
         """Return data required for initializing JiraClient"""
         return {
             'URL': self.config['JIRA_URL'],
             'USER': self.config['JIRA_USER'],
             'PASS': self.config['JIRA_PASS'],
-            'PROJECT_KEY': self.config['PROJECT_KEY'],
+            'PROJECT_KEY': project_key,
             'TEMPLATE_DIR': self.config['TEMPLATE_DIR'],
         }
 
