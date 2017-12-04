@@ -52,7 +52,6 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             return
 
         self.setup_repos()
-        self.github_client = self.get_github_client()  # pylint:disable=attribute-defined-outside-init
         super().activate()
 
     def setup_repos(self):
@@ -105,7 +104,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         recurse_check_structure(config_template, configuration)
 
         # Check that each project configuration matches the template
-        for k, v in projects_config.items():
+        for _, v in projects_config.items():
             recurse_check_structure(projects_template['some-project'], v)
 
         configuration.update({'projects': projects_config})
@@ -123,7 +122,6 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         try:
             jira = JiraClient(self.jira_config)
             project_name = jira.get_project_name()
-            git = GitClient(self.get_project_root(project_name), self.log)
 
             release_type = jira.get_release_type()
             new_jira_version = jira.create_version(release_type)
@@ -133,7 +131,6 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             release_notes = jira.get_release_notes(new_jira_version)
         except JIRAError:
             exc_message = jira.delete_version(
-                project_key,
                 new_jira_version,
             )
             self.log.exception(
@@ -142,45 +139,26 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             return exc_message
 
         try:
+            git = GitClient(self.get_git_config(project_name, new_jira_version.name))
             git.merge_and_create_release_commit(
-                new_jira_version.name,
                 release_notes,
                 self.config['changelog_path'].format(git.root)
             )
-            commit_hash = git.get_rev_hash('master')
         except GitCommandError as exc:  # TODO: should the exception be changed to GitCommandError?
             self.log.exception(
                 'Unable to merge release branch to master and create release commit.'
             )
             exc_message = jira.delete_version(
-                project_key,
                 new_jira_version,
                 'git',
             )
             return exc_message
 
-        repo = self.github_client.get_organization(
-            self.config['projects'][project_name]['github_org'],
-        ).get_repo(
-            project_name,
-        )
+        git.create_tag()
+        git.create_ref()
+        git.create_release(release_notes)
+        git.update_develop()
 
-        git.create_tag(
-            new_jira_version.name,
-        )
-        repo.create_git_ref(
-            'refs/tags/{}'.format('v' + new_jira_version.name),
-            commit_hash,
-        )
-        repo.create_git_release(
-            tag='v' + new_jira_version.name,
-            name='{} - Version {}'.format(project_name, new_jira_version.name),
-            message=release_notes,
-            draft=False,
-            prerelease=False,
-        )
-
-        git.merge_master_to_develop()
         return self.send_card(
             in_reply_to=msg,
             summary='I was able to complete the %s release for you.' % project_name,
@@ -196,22 +174,10 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 ),
                 (
                     'GitHub Release',
-                    Release.get_github_release_url(
-                        self.config['projects'][project_name]['github_org'],
-                        project_name,
-                        'v' + new_jira_version.name,
-                    ),
+                    git.release_url,
                 ),
             ),
             color='green',
-        )
-
-    @staticmethod
-    def get_github_release_url(github_org: str, project_name: str, new_version_name: str) -> str:
-        return 'https://github.com/{github_org}/{project_name}/releases/tag/{new_version_name}'.format(
-            github_org=github_org,
-            project_name=project_name,
-            new_version_name=new_version_name,
         )
 
     def get_project_root(self, project_name: str) -> str:
@@ -219,7 +185,8 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         return self.config['REPOS_ROOT'] + project_name
 
     @property
-    def jira_config(self):
+    def jira_config(self) -> dict:
+        """Return data required for initializing JiraClient"""
         return {
             'URL': self.config['JIRA_URL'],
             'USER': self.config['JIRA_USER'],
@@ -228,6 +195,12 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             'TEMPLATE_DIR': self.config['TEMPLATE_DIR'],
         }
 
-    def get_github_client(self) -> Github:
-        """Get an instance of the PyGitHub client using the plugins configuration for authentication."""
-        return Github(self.config['GITHUB_TOKEN'])
+    def get_git_config(self, project_name: str, new_version_name: str) -> dict:
+        """Return data required for initializing GitClient"""
+        return {
+            'ROOT': self.get_project_root(project_name),
+            'PROJECT_NAME': project_name,
+            'GITHUB_ORG': self.config['projects'][project_name]['github_org'],
+            'GITHUB_TOKEN': self.config['GITHUB_TOKEN'],
+            'NEW_VERSION_NAME': new_version_name,
+        }
