@@ -88,7 +88,7 @@ class JiraClient:
             return template.render({
                 'project_name': project_name,
                 'version_number': version.name,
-                'issues': self.jira_client.search_issues(
+                'issues': self.api.search_issues(
                     jql_str=(
                         'project = {project_name} '
                         'AND fixVersion = "{version_name}" '
