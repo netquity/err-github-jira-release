@@ -139,7 +139,7 @@ class JiraClient:
 
     def get_release_url(self, version_id: int) -> str:
         return '{jira_url}/projects/{project_key}/versions/{version_id}/tab/release-report-done'.format(
-            jira_url=self.api.server,
+            jira_url=self.api.client_info(),
             project_key=self.project_key,
             version_id=version_id,
         )
