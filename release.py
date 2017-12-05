@@ -38,8 +38,15 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         get updated with `Fix Version = 2.0.0`. The release notes are added to the CHANGELOG.md file and to the tag
         created at GitHub.
 
-    Note: Currently does not support hotfix releases; only standard releases from origin/develop to origin/master are
-    supported.
+    Hotfixes are supported only under the following workflow:
+    When a hotfix is required, a new branch must be created based on the master branch. All hotfix related work is to go
+    into that branch. Upon completion and testing, the hotfix branch is deployed to the production server. A commit with
+    the hotfix changelog is pushed to develop for posterity, but no other changes are incorporated.  Only one hotfix is
+    allowed per release at the moment. The hotfix branch must:
+        - be titled `hotfix`
+        - NEVER get merged into any branch (neither master nor develop)
+        - be discarded prior to the next standard release
+        - not contain any database migrations
     """
 
     def activate(self):
@@ -110,10 +117,12 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         configuration.update({'projects': projects_config})
 
     @arg_botcmd('--project-key', dest='project_key', type=str.upper, required=True)
+    @arg_botcmd('--hotfix', action="store_true", dest='is_hotfix', default=False, required=False)
     def version(
             self,
             msg: 'errbot.backends.base.Message',
             project_key: str,
+            is_hotfix: bool,
     ) -> str:
         """Perform a version release to GitHub using issues from JIRA."""
         from gitclient import GitCommandError
@@ -123,7 +132,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             jira = JiraClient(self.get_jira_config(project_key))
             project_name = jira.get_project_name()
 
-            release_type = jira.get_release_type()
+            release_type = jira.get_release_type(is_hotfix)
             new_jira_version = jira.create_version(release_type)
             jira.set_fix_version(
                 new_jira_version.name,
@@ -140,10 +149,13 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
 
         try:
             git = GitClient(self.get_git_config(project_name, new_jira_version.name))
-            git.merge_and_create_release_commit(
-                release_notes,
-                self.config['changelog_path'].format(git.root)
-            )
+            if is_hotfix:
+                git.add_release_notes_to_develop(release_notes)  # TODO: need better exception handling
+            else:
+                git.merge_and_create_release_commit(
+                    release_notes,
+                    self.config['changelog_path'].format(git.root)
+                )
         except GitCommandError as exc:  # TODO: should the exception be changed to GitCommandError?
             self.log.exception(
                 'Unable to merge release branch to master and create release commit.'
@@ -157,7 +169,8 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         git.create_tag()
         git.create_ref()
         git.create_release(release_notes)
-        git.update_develop()
+        if not is_hotfix:
+            git.update_develop()
 
         return self.send_card(
             in_reply_to=msg,

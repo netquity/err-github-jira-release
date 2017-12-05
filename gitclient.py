@@ -109,3 +109,25 @@ class GitClient:
             project_name=self.project_name,
             new_version_name='v' + self.new_version_name,
         )
+
+    def add_release_notes_to_develop(self, release_notes: str) -> str:
+        """Wrap subprocess calls with some project-specific defaults.
+
+        :return: Release commit hash.
+        """
+        from utils import update_changelog_file, run_subprocess
+        for git_command in [
+                # TODO: deal with merge conflicts in an interactive way
+                ['fetch', '-p'],
+                ['checkout', 'origin/develop'],
+                ['add', update_changelog_file(self.root, release_notes, logger)],
+                # FIXME: make sure version number doesn't have `hotfix` in it, or does... just make it consistent
+                ['commit', '-m', 'Hotfix {}'.format(self.new_version_name)],
+                ['push', 'origin', 'develop'],
+        ]:
+            self.execute_command(git_command)
+
+        return run_subprocess(
+            ['git', 'rev-parse', 'develop'],
+            cwd=self.root,
+        ).stdout.strip()  # Get rid of the newline character at the end

@@ -105,8 +105,10 @@ class JiraClient:
             )
             raise exc
 
-    def get_release_type(self) -> str:
+    def get_release_type(self, is_hotfix: bool=False) -> str:
         """Get the highest Release Type of all closed issues without a Fix Version."""
+        if is_hotfix:
+            return 'Hotfix'
         try:
             for release_type in ['Major', 'Minor', 'Patch']:
                 if len(
