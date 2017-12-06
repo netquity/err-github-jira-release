@@ -137,6 +137,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             new_jira_version = jira.create_version(release_type)
             jira.set_fix_version(
                 new_jira_version.name,
+                is_hotfix,
             )
             release_notes = jira.get_release_notes(new_jira_version)
         except JIRAError:

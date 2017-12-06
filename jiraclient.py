@@ -2,8 +2,6 @@
 import datetime
 import logging
 
-import utils
-
 logger = logging.getLogger(__file__)
 
 from jinja2 import Environment, FileSystemLoader
@@ -146,18 +144,19 @@ class JiraClient:
             version_id=version_id,
         )
 
-    def set_fix_version(self, new_version: str):
+    def set_fix_version(self, new_version: str, is_hotfix: bool=False):
         """Set the fixVersion on all of the closed tickets without one."""
         # TODO: exceptions
-
         for issue in self.api.search_issues(
                 jql_str=(
                     'project = "{}" '
                     'AND status = "closed" '
                     'AND resolution in ("Fixed", "Done") '
-                    'AND fixVersion = EMPTY'
+                    'AND fixVersion = EMPTY '
+                    '{} '  # For any optional params we might need now and later
                 ).format(
                     self.project_key.upper(),
+                    'AND "Release Type" = "Hotfix"' if is_hotfix else None,
                 ),
         ):
             self.api.transition_issue(issue, 'Reopen Issue')
@@ -174,8 +173,9 @@ class JiraClient:
             self.api.transition_issue(issue, 'Close Issue')
 
     def create_version(self, release_type: str) -> 'jira.resources.Version':
+        from utils import bump_version
         return self.api.create_version(
-            utils.bump_version(
+            bump_version(
                 self.get_latest_version().name,
                 release_type,
             ),
