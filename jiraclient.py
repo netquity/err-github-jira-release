@@ -2,6 +2,8 @@
 import datetime
 import logging
 
+import utils
+
 logger = logging.getLogger(__file__)
 
 from jinja2 import Environment, FileSystemLoader
@@ -172,9 +174,8 @@ class JiraClient:
             self.api.transition_issue(issue, 'Close Issue')
 
     def create_version(self, release_type: str) -> 'jira.resources.Version':
-        from utils import bump_version
         return self.api.create_version(
-            bump_version(
+            utils.bump_version(
                 self.get_latest_version().name,
                 release_type,
             ),

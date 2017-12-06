@@ -5,6 +5,8 @@ import subprocess
 
 from github import Github
 
+import utils
+
 logger = logging.getLogger(__file__)
 
 
@@ -26,9 +28,8 @@ class GitClient:
 
     def execute_command(self, git_command: list):
         """Execute a git command"""
-        from utils import run_subprocess
         try:
-            return run_subprocess(
+            return utils.run_subprocess(
                 ['git'] + git_command,
                 cwd=self.root,
             )
@@ -69,7 +70,6 @@ class GitClient:
 
     def merge_and_create_release_commit(self, release_notes: str, changelog_path: str):
         """Create a release commit based on origin/develop and merge it to master"""
-        from utils import update_changelog_file
         for git_command in [
                 # TODO: deal with merge conflicts in an interactive way
                 ['fetch', '-p'],
@@ -77,7 +77,7 @@ class GitClient:
         ]:
             self.execute_command(git_command)
 
-        update_changelog_file(
+        utils.update_changelog_file(
             changelog_path,
             release_notes,
             logger,
@@ -115,19 +115,18 @@ class GitClient:
 
         :return: Release commit hash.
         """
-        from utils import update_changelog_file, run_subprocess
         for git_command in [
                 # TODO: deal with merge conflicts in an interactive way
                 ['fetch', '-p'],
                 ['checkout', 'origin/develop'],
-                ['add', update_changelog_file(self.root, release_notes, logger)],
+                ['add', utils.update_changelog_file(self.root, release_notes, logger)],
                 # FIXME: make sure version number doesn't have `hotfix` in it, or does... just make it consistent
                 ['commit', '-m', 'Hotfix {}'.format(self.new_version_name)],
                 ['push', 'origin', 'develop'],
         ]:
             self.execute_command(git_command)
 
-        return run_subprocess(
+        return utils.run_subprocess(
             ['git', 'rev-parse', 'develop'],
             cwd=self.root,
         ).stdout.strip()  # Get rid of the newline character at the end
