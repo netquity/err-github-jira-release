@@ -123,10 +123,10 @@ class GitClient:
             self.execute_command(git_command)
 
             changelog_path = os.path.join(self.root, 'CHANGELOG.md')
-            utils.update_changelog_file(changelog_path)
+            utils.update_changelog_file(changelog_path, release_notes, logger)
 
         for git_command in [
-                ['add', changelog_path, release_notes, logger],
+                ['add', changelog_path],
                 # FIXME: make sure version number doesn't have `hotfix` in it, or does... just make it consistent
                 ['commit', '-m', 'Hotfix {}'.format(self.new_version_name)],
                 ['push', 'origin', 'develop'],
