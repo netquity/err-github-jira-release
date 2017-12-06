@@ -119,7 +119,7 @@ class GitClient:
                 # TODO: deal with merge conflicts in an interactive way
                 ['fetch', '-p'],
                 ['checkout', 'origin/develop'],
-                ['add', utils.update_changelog_file(self.root, release_notes, logger)],
+                ['add', utils.update_changelog_file(os.path.join(self.root, 'CHANGELOG.md'), release_notes, logger)],
                 # FIXME: make sure version number doesn't have `hotfix` in it, or does... just make it consistent
                 ['commit', '-m', 'Hotfix {}'.format(self.new_version_name)],
                 ['push', 'origin', 'develop'],
