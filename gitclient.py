@@ -5,7 +5,7 @@ import subprocess
 
 from github import Github
 
-import utils
+import helpers
 
 logger = logging.getLogger(__file__)
 
@@ -29,7 +29,7 @@ class GitClient:
     def execute_command(self, git_command: list):
         """Execute a git command"""
         try:
-            return utils.run_subprocess(
+            return helpers.run_subprocess(
                 ['git'] + git_command,
                 cwd=self.root,
             )
@@ -77,7 +77,7 @@ class GitClient:
         ]:
             self.execute_command(git_command)
 
-        utils.update_changelog_file(
+        helpers.update_changelog_file(
             changelog_path,
             release_notes,
             logger,
@@ -123,7 +123,7 @@ class GitClient:
             self.execute_command(git_command)
 
             changelog_path = os.path.join(self.root, 'CHANGELOG.md')
-            utils.update_changelog_file(changelog_path, release_notes, logger)
+            helpers.update_changelog_file(changelog_path, release_notes, logger)
 
         for git_command in [
                 ['add', changelog_path],
@@ -133,7 +133,7 @@ class GitClient:
         ]:
             self.execute_command(git_command)
 
-        return utils.run_subprocess(
+        return helpers.run_subprocess(
             ['git', 'rev-parse', 'develop'],
             cwd=self.root,
         ).stdout.strip()  # Get rid of the newline character at the end

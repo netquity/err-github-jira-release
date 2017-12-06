@@ -8,7 +8,7 @@ from errbot.botplugin import recurse_check_structure
 from gitclient import GitClient
 from jiraclient import JiraClient
 
-import utils
+import helpers
 
 logger = logging.getLogger(__file__)
 
@@ -74,7 +74,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         for project_name in self.config['projects']:
             if not os.path.exists(os.path.join(self.config['REPOS_ROOT'], project_name)):
                 # Possible race condition if folder somehow gets created between check and creation
-                utils.run_subprocess(
+                helpers.run_subprocess(
                     ['git', 'clone', self.config['projects'][project_name]['repo_url']],
                     cwd=self.config['REPOS_ROOT'],
                 )

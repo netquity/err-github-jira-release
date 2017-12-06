@@ -173,7 +173,7 @@ class JiraClient:
             self.api.transition_issue(issue, 'Close Issue')
 
     def create_version(self, release_type: str) -> 'jira.resources.Version':
-        from .utils import bump_version
+        from helpers import bump_version
         return self.api.create_version(
             bump_version(
                 self.get_latest_version().name,
