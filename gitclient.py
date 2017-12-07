@@ -118,7 +118,7 @@ class GitClient:
         for git_command in [
                 # TODO: deal with merge conflicts in an interactive way
                 ['fetch', '-p'],
-                ['checkout', 'origin/develop'],
+                ['checkout', '-B', 'develop', 'origin/develop'],
         ]:
             self.execute_command(git_command)
 
