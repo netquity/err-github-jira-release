@@ -24,6 +24,12 @@ class JiraClient:
     def __init__(self, config: dict):
         self.project_key = config['PROJECT_KEY']
         self.template_dir = config['TEMPLATE_DIR']
+        # Used to search for issues in several places
+        self.issues_search_string = 'project = %s ' % self.project_key.upper() + (
+            'AND status = "closed" '
+            'AND fixVersion = EMPTY '
+            'AND resolution in ("Fixed", "Done") '
+        )
         try:
             self.api = JIRA(
                 server=config['URL'],
@@ -107,24 +113,21 @@ class JiraClient:
 
     def get_release_type(self, is_hotfix: bool=False) -> str:
         """Get the highest Release Type of all closed issues without a Fix Version."""
-        if is_hotfix:
-            return 'Hotfix'
+        search_string = self.issues_search_string + 'AND "Release Type" = "{release_type}" '
         try:
+            if is_hotfix:
+                if len(
+                        self.api.search_issues(
+                            jql_str=search_string.format(release_type='Hotfix')
+                        )
+                ):
+                    return 'Hotfix'
             for release_type in ['Major', 'Minor', 'Patch']:
                 if len(
                         self.api.search_issues(
-                            jql_str=(
-                                'project = {project_key} '
-                                'AND status = "closed" '
-                                'AND fixVersion = EMPTY '
-                                'AND resolution in ("Fixed", "Done") '
-                                'AND "Release Type" = "{release_type}" '
-                            ).format(
-                                project_key=self.project_key.upper(),
-                                release_type=release_type,
-                            ),
+                            jql_str=search_string.format(release_type=release_type),
                         )
-                ) > 0:  # Since we go in order from highest to smallest, pick the first one found
+                ):  # Since we go in order from highest to smallest, pick the first one found
                     return release_type
         except JIRAError as exc:
             logger.exception(
@@ -148,16 +151,8 @@ class JiraClient:
         """Set the fixVersion on all of the closed tickets without one."""
         # TODO: exceptions
         for issue in self.api.search_issues(
-                jql_str=(
-                    'project = "{}" '
-                    'AND status = "closed" '
-                    'AND resolution in ("Fixed", "Done") '
-                    'AND fixVersion = EMPTY '
-                    '{} '  # For any optional params we might need now and later
-                ).format(
-                    self.project_key.upper(),
-                    'AND "Release Type" = "Hotfix"' if is_hotfix else None,
-                ),
+                # For non-hotfix releases the release type isn't part of the search criteria since it's a mixture
+                jql_str=self.issues_search_string + 'AND "Release Type" = "Hotfix"' if is_hotfix else None
         ):
             self.api.transition_issue(issue, 'Reopen Issue')
 
