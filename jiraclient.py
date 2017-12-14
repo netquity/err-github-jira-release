@@ -173,7 +173,7 @@ class JiraClient:
             bump_version(
                 self.get_latest_version().name,
                 release_type,
-            ),
+            ).split('-')[0],  # Check for `-Hotfix` suffix
             project=self.project_key,
             released=True,
             releaseDate=datetime.datetime.now().date().isoformat(),
