@@ -152,7 +152,7 @@ class JiraClient:
         # TODO: exceptions
         for issue in self.api.search_issues(
                 # For non-hotfix releases the release type isn't part of the search criteria since it's a mixture
-                jql_str=self.issues_search_string + 'AND "Release Type" = "Hotfix"' if is_hotfix else None
+                jql_str=self.issues_search_string + ('AND "Release Type" = "Hotfix"' if is_hotfix else '')
         ):
             self.api.transition_issue(issue, 'Reopen Issue')
 
