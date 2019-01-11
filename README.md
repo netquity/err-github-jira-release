@@ -22,6 +22,17 @@ presumes you have additional tooling set up for that.
     - `sent`: internal QA has signed off on a `sealed` `develop`, ready for user acceptance testing (UAT hereafter)
     - `signed`: UAT has validated a `sent` release, ready for shipping
 
+## Hotfix vs. Standard Releases
+Hotfix releases and standard releases follow the same versioning scheme, with a few workflow exceptions:
+- hotfixes MUST be created in a branch called `hotfix`
+- hotfixes MUST be based on `master`
+- hotfix branches MUST be deleted after a final hotfix version is built
+- hotfix branches MUST NOT be merged to any other branch, including, but not limited to, `master` and `develop`
+- hotfix tickets MUST be merged to the `hotfix` branch or discarded (if ticket is aborted)
+- hotfix tickets MUST have a corresponding ticket to be backported to `develop`
+- hotfix releases MUST include the word `hotfix` in their metadata segment at all stages of the release cycle
+- ?? hotfixes MUST NOT contain ANY database migrations
+
 # GitHub and Jira Interactions
 - version creation in Jira
 - release creation in GitHub
