@@ -3,6 +3,8 @@ import os
 import sys
 import subprocess
 
+from typing import Callable, Union
+
 from github import Github
 
 import helpers
@@ -137,3 +139,52 @@ class GitClient:
             ['git', 'rev-parse', 'develop'],
             cwd=self.root,
         ).stdout.strip()  # Get rid of the newline character at the end
+
+    def get_latest_pre_release_tag(self) -> Union['github.Tag.tag', None]:
+        """Get the latest pre-release tag
+
+        Tags are identified as pre-release tags if they contain a pre-release segment such as the following, where the
+        hyphen-separated component (`rc.1`) makes up the pre-release segment:
+        v1.0.0-rc.1
+        v1.0.0-rc.1+sealed
+
+        However, the presence of a SemVer metadata segment has no bearing on whether it's a pre-release tag or not.
+        """
+        return self.find_tag(GitClient.is_prerelease_tag_name)
+
+    def get_latest_final_tag(self) -> Union['github.Tag.tag', None]:
+        """Get the latest final tag
+
+        Final tags do not contain a pre-release segment, but may contain a SemVer metadata segment."""
+        return self.find_tag(lambda tag: not GitClient.is_prerelease_tag_name(tag))
+
+    def find_tag(self, test: Callable[[str], bool]) -> Union['github.Tag.tag', None]:
+        """Return the first tag that passes a given test or `None` if none found"""
+        return next((tag for tag in self.get_tags() if test(tag.name)), None)
+
+    @classmethod
+    def is_prerelease_tag_name(cls, tag_name: str) -> bool:
+        """Determine whether the given tag string is a pre-release tag string
+
+        >>> GitClient.is_prerelease_tag_name('v1.0.0')
+        false
+        >>> GitClient.is_prerelease_tag_name('v1.0.0-rc.1')
+        true
+        >>> GitClient.is_prerelease_tag_name('v1.0.0-rc.1+sealed')
+        true
+        >>> GitClient.is_prerelease_tag_name('v1.0.0+20130313144700')
+        false
+        """
+        import semver
+        try:
+            return semver.parse(tag_name[1:]).get('prerelease') is not None
+        except ValueError as exc:
+            logger.exception(
+                'Failure parsing tag string=%s',
+                tag_name,
+            )
+            raise exc
+
+    def get_tags(self) -> Github.PaginatedList.PaginatedList:
+        """Get all the tags for the repo"""
+        return self.origin.get_tags()  # TODO: consider searching local repo instead of GitHub
