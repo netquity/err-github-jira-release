@@ -1,3 +1,7 @@
+"""
+This module provides high-level support for managing a local git repository and consolidating its changes with GitHub.
+"""
+
 import logging
 import os
 import sys
@@ -17,6 +21,7 @@ class GitCommandError(Exception):
 
 
 class GitClient:
+    """Manage a local repo and its remote"""
     def __init__(self, config: dict):
         self.root = config['ROOT']
         self.new_version_name = config['NEW_VERSION_NAME']
@@ -35,7 +40,7 @@ class GitClient:
                 ['git'] + git_command,
                 cwd=self.root,
             )
-        except subprocess.CalledProcessError as exc:
+        except subprocess.CalledProcessError:
             logger.exception(
                 'Failed git command=%s, output=%s',
                 git_command,
@@ -46,16 +51,24 @@ class GitClient:
     def create_tag(self):
         """Create a git tag"""
         self.execute_command(
-            ['tag', '-s', 'v' + self.new_version_name, '-m', 'v' + self.new_version_name,]
+            ['tag', '-s', 'v' + self.new_version_name, '-m', 'v' + self.new_version_name, ]
         )
 
     def create_ref(self):
+        """Create a ref and push it to origin
+
+        https://developer.github.com/v3/git/refs/#create-a-reference
+        """
         self.origin.create_git_ref(
             'refs/tags/{}'.format('v' + self.new_version_name),
             self.get_rev_hash('master'),  # TODO: this will have to be something else for hotfixes
         )
 
     def create_release(self, release_notes: str):
+        """Create a GitHub release object and push it origin
+
+        https://developer.github.com/v3/repos/releases/#create-a-release
+        """
         self.origin.create_git_release(
             tag='v' + self.new_version_name,
             name='{} - Version {}'.format(self.project_name, self.new_version_name),
@@ -106,6 +119,7 @@ class GitClient:
 
     @property
     def release_url(self) -> str:
+        """Get the GitHub release URL"""
         return 'https://github.com/{github_org}/{project_name}/releases/tag/{new_version_name}'.format(
             github_org=self.github_org,
             project_name=self.project_name,
