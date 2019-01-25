@@ -2,9 +2,10 @@
 import datetime
 import logging
 
+from jinja2 import Environment, FileSystemLoader
+
 logger = logging.getLogger(__file__)
 
-from jinja2 import Environment, FileSystemLoader
 
 try:
     from jira import JIRA, JIRAError
@@ -22,14 +23,7 @@ class NoJIRAIssuesFoundError(Exception):
 
 class JiraClient:
     def __init__(self, config: dict):
-        self.project_key = config['PROJECT_KEY']
         self.template_dir = config['TEMPLATE_DIR']
-        # Used to search for issues in several places
-        self.issues_search_string = 'project = %s ' % self.project_key.upper() + (
-            'AND status = "closed" '
-            'AND fixVersion = EMPTY '
-            'AND resolution in ("Fixed", "Done") '
-        )
         try:
             self.api = JIRA(
                 server=config['URL'],
@@ -43,10 +37,11 @@ class JiraClient:
             logger.exception('Unable to initialize JIRA client at URL=%s', config['URL'])
             raise exc
 
-    def get_project_name(self):
-        return self.api.project(self.project_key).name
+    def get_project_name(self, project_key: str) -> str:
+        """Get the Jira project name for the given project key"""
+        return self.api.project(project_key.upper()).name
 
-    def delete_version(self, version: 'jira.resources.Version', failed_command: str='JIRA'):
+    def delete_version(self, project_key: str, version: 'jira.resources.Version', failed_command: str='JIRA'):
         """Delete a JIRA version.
 
         Used to undo created versions when subsequent operations fail."""
@@ -55,7 +50,7 @@ class JiraClient:
         except JIRAError:
             exc_message = (
                 'Unable to complete JIRA request for project_key={} and unable to clean up new version={}'.format(
-                    self.project_key,
+                    project_key.upper(),
                     version.name,
                 )
             )
@@ -63,19 +58,19 @@ class JiraClient:
 
         return 'Unable to complete %s operation for project_key=%s. JIRA version deleted.' % (
             failed_command,
-            self.project_key,
+            project_key.upper(),
         )
 
-    def get_latest_version(self) -> 'jira.resources.Version':
+    def get_latest_version(self, project_key: str) -> 'jira.resources.Version':
         """Get the latest version resource from JIRA.
 
         Assumes all existing versions are released and ordered by descending date."""
         try:
-            return self.api.project_versions(self.project_key)[-1]
+            return self.api.project_versions(project_key.upper())[-1]
         except (JIRAError, IndexError) as exc:
             logger.exception(
                 'Unable to get the latest JIRA version resource for project_key=%s',
-                self.project_key,
+                project_key.upper(),
             )
             raise exc
 
@@ -111,9 +106,9 @@ class JiraClient:
             )
             raise exc
 
-    def get_release_type(self, is_hotfix: bool=False) -> str:
+    def get_release_type(self, project_key: str, is_hotfix: bool=False) -> str:
         """Get the highest Release Type of all closed issues without a Fix Version."""
-        search_string = self.issues_search_string + 'AND "Release Type" = "{release_type}" '
+        search_string = self.get_issue_search_string(project_key) + 'AND "Release Type" = "{release_type}" '
         try:
             if is_hotfix:
                 if len(
@@ -132,27 +127,27 @@ class JiraClient:
         except JIRAError as exc:
             logger.exception(
                 'Unknown JIRA error occurred when trying to determine release type for project_key=%s',
-                self.project_key,
+                project_key.upper(),
             )
             raise exc
 
         raise NoJIRAIssuesFoundError(
-            'Could not find any closed issues without a fixVersion in project_key=%s' % self.project_key
+            'Could not find any closed issues without a fixVersion in project_key=%s' % project_key.upper()
         )
 
-    def get_release_url(self, version_id: int) -> str:
+    def get_release_url(self, project_key: str, version_id: int) -> str:
         return '{jira_url}/projects/{project_key}/versions/{version_id}/tab/release-report-done'.format(
             jira_url=self.api.client_info(),
-            project_key=self.project_key,
+            project_key=project_key.upper(),
             version_id=version_id,
         )
 
-    def set_fix_version(self, new_version: str, is_hotfix: bool=False):
+    def set_fix_version(self, project_key: str, new_version: str, is_hotfix: bool=False):
         """Set the fixVersion on all of the closed tickets without one."""
         # TODO: exceptions
         for issue in self.api.search_issues(
                 # For non-hotfix releases the release type isn't part of the search criteria since it's a mixture
-                jql_str=self.issues_search_string + ('AND "Release Type" = "Hotfix"' if is_hotfix else '')
+                jql_str=self.get_issue_search_string(project_key) + ('AND "Release Type" = "Hotfix"' if is_hotfix else '')
         ):
             self.api.transition_issue(issue, 'Reopen Issue')
 
@@ -167,14 +162,24 @@ class JiraClient:
 
             self.api.transition_issue(issue, 'Close Issue')
 
-    def create_version(self, release_type: str) -> 'jira.resources.Version':
+    def create_version(self, project_key: str, release_type: str) -> 'jira.resources.Version':
         from helpers import bump_version
         return self.api.create_version(
             bump_version(
                 self.get_latest_version().name.split('-')[0],  # Check for `-Hotfix` suffix
                 release_type,
             ),
-            project=self.project_key,
+            project=project_key.upper(),
             released=True,
             releaseDate=datetime.datetime.now().date().isoformat(),
+        )
+
+    @classmethod
+    def get_issue_search_string(cls, project_key: str) -> str:
+        """Search for issues in transition since the last release"""
+        # TODO: maybe we should search by some other field that unites all projects in the stack
+        return 'project = %s ' % project_key.upper() + (
+            'AND status = "closed" '
+            'AND fixVersion = EMPTY '
+            'AND resolution in ("Fixed", "Done") '
         )

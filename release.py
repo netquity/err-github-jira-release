@@ -130,18 +130,20 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         # Check out latest
         # TODO: check validity of given version number
         try:
-            jira = JiraClient(self.get_jira_config(project_key))
-            project_name = jira.get_project_name()
+            jira = JiraClient(self.get_jira_config())
+            project_name = jira.get_project_name(project_key)
 
             release_type = jira.get_release_type(is_hotfix)
-            new_jira_version = jira.create_version(release_type)
+            new_jira_version = jira.create_version(project_key, release_type)
             jira.set_fix_version(
+                project_key,
                 new_jira_version.name,
                 is_hotfix,
             )
             release_notes = jira.get_release_notes(new_jira_version)
         except JIRAError:
             exc_message = jira.delete_version(
+                project_key,
                 new_jira_version,
             )
             self.log.exception(
@@ -163,6 +165,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 'Unable to merge release branch to master and create release commit.'
             )
             exc_message = jira.delete_version(
+                project_key,
                 new_jira_version,
                 'git',
             )
@@ -184,6 +187,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 (
                     'JIRA Release',
                     jira.get_release_url(
+                        project_key,
                         new_jira_version.id,
                     ),
                 ),
@@ -199,13 +203,16 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         """Get the root of the project's Git repo locally."""
         return self.config['REPOS_ROOT'] + project_name
 
-    def get_jira_config(self, project_key: str) -> dict:
+    def get_project_names(self) -> list:
+        """Get the list of project names from the configuration"""
+        return list(self.config['projects'])
+
+    def get_jira_config(self) -> dict:
         """Return data required for initializing JiraClient"""
         return {
             'URL': self.config['JIRA_URL'],
             'USER': self.config['JIRA_USER'],
             'PASS': self.config['JIRA_PASS'],
-            'PROJECT_KEY': project_key,
             'TEMPLATE_DIR': self.config['TEMPLATE_DIR'],
         }
 
