@@ -9,7 +9,7 @@ import subprocess
 
 from typing import Callable, Union
 
-from github import Github
+from github import Github, PaginatedList
 
 import helpers
 
@@ -191,6 +191,7 @@ class GitClient:
         """
         import semver
         try:
+            # tag_name[1:] because our tags have a leading `v`
             return semver.parse(tag_name[1:]).get('prerelease') is not None
         except ValueError as exc:
             logger.exception(
@@ -199,6 +200,6 @@ class GitClient:
             )
             raise exc
 
-    def get_tags(self) -> Github.PaginatedList.PaginatedList:
+    def get_tags(self) -> PaginatedList.PaginatedList:
         """Get all the tags for the repo"""
         return self.origin.get_tags()  # TODO: consider searching local repo instead of GitHub
