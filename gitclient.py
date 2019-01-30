@@ -7,9 +7,10 @@ import os
 import sys
 import subprocess
 
-from typing import Callable, Union
+from typing import Callable, Union, List
 
 from github import Github, PaginatedList
+from github.Repository import Repository
 
 import helpers
 
@@ -27,9 +28,10 @@ class GitClient:
         self.new_version_name = config['NEW_VERSION_NAME']
         self.github_org = config['GITHUB_ORG']
         self.project_name = config['PROJECT_NAME']
-        self.origin = Github(config['GITHUB_TOKEN']).get_organization(
+        self.org = Github(config['GITHUB_TOKEN']).get_organization(
             self.github_org,
-        ).get_repo(
+        )
+        self.origin = self.org.get_repo(
             self.project_name,
         )
 
@@ -154,7 +156,8 @@ class GitClient:
             cwd=self.root,
         ).stdout.strip()  # Get rid of the newline character at the end
 
-    def get_latest_pre_release_tag(self) -> Union['github.Tag.tag', None]:
+    @classmethod
+    def get_latest_pre_release_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:
         """Get the latest pre-release tag
 
         Tags are identified as pre-release tags if they contain a pre-release segment such as the following, where the
@@ -164,17 +167,20 @@ class GitClient:
 
         However, the presence of a SemVer metadata segment has no bearing on whether it's a pre-release tag or not.
         """
-        return self.find_tag(GitClient.is_prerelease_tag_name)
+        return cls.find_tag(origin, cls.is_prerelease_tag_name)
 
-    def get_latest_final_tag(self) -> Union['github.Tag.tag', None]:
+    @classmethod
+    def get_latest_final_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:
         """Get the latest final tag
 
-        Final tags do not contain a pre-release segment, but may contain a SemVer metadata segment."""
-        return self.find_tag(lambda tag: not GitClient.is_prerelease_tag_name(tag))
+        Final tags do not contain a pre-release segment, but may contain a SemVer metadata segment.
+        """
+        return cls.find_tag(origin, lambda tag: not cls.is_prerelease_tag_name(tag))
 
-    def find_tag(self, test: Callable[[str], bool]) -> Union['github.Tag.tag', None]:
+    @classmethod
+    def find_tag(cls, origin: Repository, test: Callable[[str], bool]) -> Union['github.Tag.tag', None]:
         """Return the first tag that passes a given test or `None` if none found"""
-        return next((tag for tag in self.get_tags() if test(tag.name)), None)
+        return next((tag for tag in cls.get_tags(origin) if test(tag.name)), None)
 
     @classmethod
     def is_prerelease_tag_name(cls, tag_name: str) -> bool:
@@ -200,6 +206,34 @@ class GitClient:
             )
             raise exc
 
-    def get_tags(self) -> PaginatedList.PaginatedList:
+    @classmethod
+    def get_tags(cls, origin: Repository) -> PaginatedList.PaginatedList:
         """Get all the tags for the repo"""
-        return self.origin.get_tags()  # TODO: consider searching local repo instead of GitHub
+        return origin.get_tags()  # TODO: consider searching local repo instead of GitHub
+
+    def get_all_repos(self, project_names: List[str]) -> List[Repository]:
+        """Get a list of all the repositories under management
+
+        http://developer.github.com/v3/repos/
+        """
+        return [self.org.get_repo(project_name) for project_name in project_names]
+
+    def is_updated_since_last_final(self, repo: Repository) -> bool:
+        """Check if the given repo has commits to develop since the last final release"""
+        return self.count_merges_since(
+            GitClient.get_latest_final_tag(repo).name
+        ) > 0
+
+    def get_updated_repos(self, project_names: List[str]) -> List[Repository]:
+        """Get a list of repos that have commits to develop since the last final release"""
+        return [
+            repo for repo in self.get_all_repos(project_names)
+            if self.is_updated_since_last_final(repo)
+        ]
+
+    def count_merges_since(self, tag_name: str) -> int:
+        """Get the number of merges to develop since the given tag"""
+        # FIXME: assumes master and developed have not diverged, which is not a safe assumption at all
+        return len(self.execute_command(
+            ['log', f'{tag_name}...develop', '--merges', '--oneline', ]
+        ).stdout.splitlines()) - 1  # The first result will be the merge commit from last release
