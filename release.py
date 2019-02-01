@@ -1,4 +1,5 @@
 # coding: utf-8
+"""An Errbot plugin for creating software releases by looking at completed work in Jira and GitHub."""
 import errno
 import logging
 import os
@@ -75,7 +76,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             if not os.path.exists(os.path.join(self.config['REPOS_ROOT'], project_name)):
                 # Possible race condition if folder somehow gets created between check and creation
                 helpers.run_subprocess(
-                    ['git', 'clone', self.config['projects'][project_name]['repo_url']],
+                    ['git', 'clone', f"git@github.com:{project_name}.git", project_name],
                     cwd=self.config['REPOS_ROOT'],
                 )
 
@@ -86,12 +87,9 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             'JIRA_USER': None,
             'JIRA_PASS': None,
             'GITHUB_TOKEN': None,
-            'projects': {
-                'some-project': {  # Name of the project in GitHub
-                    'jira_key': 'PRJ',
-                    'repo_url': 'git@github.com:netquity/some-project.git',
-                    'github_org': 'netquity',
-                },
+            'projects': {  # Map GitHub projects with their Jira keys
+                # Full Name of the project in GitHub, like 'jakubroztocil/httpie', and the corresponding Jira key
+                'project-full-name': 'PRJ',
             },
             'TEMPLATE_DIR': '/home/web/templates/',
             'changelog_path': '{}/CHANGELOG.md',
@@ -112,8 +110,8 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         recurse_check_structure(config_template, configuration)
 
         # Check that each project configuration matches the template
-        for _, v in projects_config.items():
-            recurse_check_structure(projects_template['some-project'], v)
+        for _, v in projects_config.items():  # pylint: disable=invalid-name
+            recurse_check_structure(projects_template['project-full-name'], v)
 
         configuration.update({'projects': projects_config})
 
@@ -216,12 +214,10 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             'TEMPLATE_DIR': self.config['TEMPLATE_DIR'],
         }
 
-    def get_git_config(self, project_name: str, new_version_name: str) -> dict:
+    def get_git_config(self) -> dict:
         """Return data required for initializing GitClient"""
         return {
-            'ROOT': self.get_project_root(project_name),
-            'PROJECT_NAME': project_name,
-            'GITHUB_ORG': self.config['projects'][project_name]['github_org'],
+            'REPOS_ROOT': self.config['REPOS_ROOT'],
             'GITHUB_TOKEN': self.config['GITHUB_TOKEN'],
-            'NEW_VERSION_NAME': new_version_name,
+            'PROJECT_NAMES': self.get_project_names(),
         }
