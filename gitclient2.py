@@ -8,7 +8,7 @@ import os
 import subprocess
 import sys
 
-from typing import Union, Callable, List
+from typing import Union, Callable, List, Generator
 
 from github import Github, PaginatedList
 from github.Repository import Repository
@@ -22,6 +22,22 @@ class GitCommandError(Exception):
     """A git command has failed"""
 
 
+def _execute_path_git(project_root: str, git_command: list) -> subprocess.CompletedProcess:
+    """Execute a git command in a specific directory"""
+    try:
+        return helpers.run_subprocess(
+            ['git'] + git_command,
+            cwd=project_root,
+        )
+    except subprocess.CalledProcessError:
+        logger.exception(
+            'Failed git command=%s, output=%s',
+            git_command,
+            sys.exc_info()[1].stdout,
+        )
+        raise GitCommandError()
+
+
 class GitClient2:
     """Manage local repos and their remotes"""
     def __init__(self, config: dict):
@@ -29,20 +45,9 @@ class GitClient2:
         self.project_names = config['PROJECT_NAMES']
         self.github = Github(config['GITHUB_TOKEN'])
 
-    def _execute_command(self, project_name: str, git_command: list):
-        """Execute a git command against a specific project"""
-        try:
-            return helpers.run_subprocess(
-                ['git'] + git_command,
-                cwd=self.get_project_root(project_name),
-            )
-        except subprocess.CalledProcessError:
-            logger.exception(
-                'Failed git command=%s, output=%s',
-                git_command,
-                sys.exc_info()[1].stdout,
-            )
-            raise GitCommandError()
+    def _execute_project_git(self, project_name: str, git_command: list) -> subprocess.CompletedProcess:
+        """Simple wrapper for executing git commands by project name"""
+        return _execute_path_git(self.get_project_root(project_name), git_command)
 
     def get_project_root(self, project_name: str) -> str:
         """Get the full path to the project root"""
@@ -51,7 +56,7 @@ class GitClient2:
     def create_tag(self, project_name: str, tag_name: str):
         """Create a git tag"""
         tag_name = f'v{tag_name}'
-        self._execute_command(
+        self._execute_project_git(
             project_name,
             ['tag', '-s', tag_name, '-m', tag_name, ]
         )
@@ -84,7 +89,7 @@ class GitClient2:
 
     def get_rev_hash(self, project_name: str, ref: str) -> str:
         """Get the SHA1 hash of a particular git ref"""
-        return self._execute_command(
+        return self._execute_project_git(
             project_name,
             ['rev-parse', ref]
         ).stdout.strip()  # Get rid of the newline character at the end
@@ -99,7 +104,7 @@ class GitClient2:
                 ['fetch', '-p'],
                 ['checkout', '-B', f'release-{new_version_name}', 'origin/develop'],
         ]:
-            self._execute_command(project_name, git_command)
+            self._execute_project_git(project_name, git_command)
 
         helpers.update_changelog_file(
             changelog_path,
@@ -114,7 +119,7 @@ class GitClient2:
                 ['merge', '--no-ff', '--no-edit', 'release-{new_version_name}'],
                 ['push', 'origin', 'master'],
         ]:
-            self._execute_command(project_name, git_command)
+            self._execute_project_git(project_name, git_command)
 
     def update_develop(self, project_name: str) -> None:
         """Merge master branch to develop"""
@@ -124,7 +129,7 @@ class GitClient2:
                 ['merge', '--no-ff', '--no-edit', 'origin/master'],
                 ['push', 'origin', 'develop'],
         ]:
-            self._execute_command(project_name, git_command)
+            self._execute_project_git(project_name, git_command)
 
     @property
     def release_url(self, project_name: str, new_version_name: str) -> str:
@@ -141,7 +146,7 @@ class GitClient2:
                 ['fetch', '-p'],
                 ['checkout', '-B', 'develop', 'origin/develop'],
         ]:
-            self._execute_command(project_name, git_command)
+            self._execute_project_git(project_name, git_command)
 
             changelog_path = os.path.join(
                 self.get_project_root(project_name), 'CHANGELOG.md',
@@ -154,7 +159,7 @@ class GitClient2:
                 ['commit', '-m', f'Hotfix {new_version_name}'],
                 ['push', 'origin', 'develop'],
         ]:
-            self._execute_command(project_name, git_command)
+            self._execute_project_git(project_name, git_command)
 
         return self.get_rev_hash(project_name, 'develop')
 
@@ -237,7 +242,7 @@ class GitClient2:
     def count_merges_since(self, project_name: str, tag_name: str) -> int:
         """Get the number of merges to develop since the given tag"""
         # FIXME: assumes master and developed have not diverged, which is not a safe assumption at all
-        return len(self._execute_command(
+        return len(self._execute_project_git(
             project_name,
             ['log', f'{tag_name}...develop', '--merges', '--oneline', ]
         ).stdout.splitlines()) - 1  # The first result will be the merge commit from last release
