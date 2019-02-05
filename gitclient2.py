@@ -127,39 +127,41 @@ class GitClient2:
     def merge_and_create_release_commit(
             self, project_name: str, new_version_name: str,
             release_notes: str, changelog_path: str
-    ):
+    ) -> None:
         """Create a release commit based on origin/develop and merge it to master"""
-        for git_command in [
-                # TODO: deal with merge conflicts in an interactive way
-                ['fetch', '-p'],
-                ['checkout', '-B', f'release-{new_version_name}', 'origin/develop'],
-        ]:
-            self._execute_project_git(project_name, git_command)
+        with self._gcmd(project_name) as gcmd:
+            for git_command in [
+                    # TODO: deal with merge conflicts in an interactive way
+                    ['fetch', '-p'],
+                    ['checkout', '-B', f'release-{new_version_name}', 'origin/develop'],
+            ]:
+                gcmd(git_command)
 
-        helpers.update_changelog_file(
-            changelog_path,
-            release_notes,
-            logger,
-        )
+            helpers.update_changelog_file(
+                changelog_path,
+                release_notes,
+                logger,
+            )
 
-        for git_command in [
-                ['add', changelog_path],
-                ['commit', '-m', f'Release {new_version_name}'],
-                ['checkout', '-B', 'master', 'origin/master'],
-                ['merge', '--no-ff', '--no-edit', 'release-{new_version_name}'],
-                ['push', 'origin', 'master'],
-        ]:
-            self._execute_project_git(project_name, git_command)
+            for git_command in [
+                    ['add', changelog_path],
+                    ['commit', '-m', f'Release {new_version_name}'],
+                    ['checkout', '-B', 'master', 'origin/master'],
+                    ['merge', '--no-ff', '--no-edit', 'release-{new_version_name}'],
+                    ['push', 'origin', 'master'],
+            ]:
+                gcmd(git_command)
 
     def update_develop(self, project_name: str) -> None:
         """Merge master branch to develop"""
-        for git_command in [
-                ['fetch', '-p'],
-                ['checkout', '-B', 'develop', 'origin/develop'],
-                ['merge', '--no-ff', '--no-edit', 'origin/master'],
-                ['push', 'origin', 'develop'],
-        ]:
-            self._execute_project_git(project_name, git_command)
+        with self._gcmd(project_name) as gcmd:
+            for git_command in [
+                    ['fetch', '-p'],
+                    ['checkout', '-B', 'develop', 'origin/develop'],
+                    ['merge', '--no-ff', '--no-edit', 'origin/master'],
+                    ['push', 'origin', 'develop'],
+            ]:
+                gcmd(git_command)
 
     @property
     def release_url(self, project_name: str, new_version_name: str) -> str:
@@ -171,25 +173,26 @@ class GitClient2:
 
         :return: Release commit hash.
         """
-        for git_command in [
-                # TODO: deal with merge conflicts in an interactive way
-                ['fetch', '-p'],
-                ['checkout', '-B', 'develop', 'origin/develop'],
-        ]:
-            self._execute_project_git(project_name, git_command)
+        with self._gcmd(project_name) as gcmd:
+            for git_command in [
+                    # TODO: deal with merge conflicts in an interactive way
+                    ['fetch', '-p'],
+                    ['checkout', '-B', 'develop', 'origin/develop'],
+            ]:
+                gcmd(git_command)
 
-            changelog_path = os.path.join(
-                self.get_project_root(project_name), 'CHANGELOG.md',
-            )
-            helpers.update_changelog_file(changelog_path, release_notes, logger)
+                changelog_path = os.path.join(
+                    self.get_project_root(project_name), 'CHANGELOG.md',
+                )
+                helpers.update_changelog_file(changelog_path, release_notes, logger)
 
-        for git_command in [
-                ['add', changelog_path],
-                # FIXME: make sure version number doesn't have `hotfix` in it, or does... just make it consistent
-                ['commit', '-m', f'Hotfix {new_version_name}'],
-                ['push', 'origin', 'develop'],
-        ]:
-            self._execute_project_git(project_name, git_command)
+            for git_command in [
+                    ['add', changelog_path],
+                    # FIXME: make sure version number doesn't have `hotfix` in it, or does... just make it consistent
+                    ['commit', '-m', f'Hotfix {new_version_name}'],
+                    ['push', 'origin', 'develop'],
+            ]:
+                gcmd(git_command)
 
         return self.get_rev_hash(project_name, 'develop')
 
