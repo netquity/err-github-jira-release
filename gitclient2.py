@@ -7,6 +7,7 @@ import logging
 import os
 import subprocess
 import sys
+from contextlib import contextmanager
 
 from typing import Union, Callable, List, Generator
 
@@ -44,6 +45,35 @@ class GitClient2:
         self.repos_root = config['REPOS_ROOT']
         self.project_names = config['PROJECT_NAMES']
         self.github = Github(config['GITHUB_TOKEN'])
+
+    @contextmanager
+    def _gcmd(self, project_name: str):  # TODO: add Generator hint
+        """A context manager for interacting with local git repos in a safer way
+
+        Records reflog position before doing anything and resets to this position if any of the git commands fail.
+        """
+        initial_ref = self.get_latest_ref(project_name)
+        try:
+            yield lambda cmd: self._execute_project_git(project_name, cmd)
+        except GitCommandError as exc:
+            self.reset_hard(project_name, initial_ref)
+            logger.warning('')  # TODO
+        finally:
+            self.clean(project_name)
+
+    def get_latest_ref(self, project_name: str) -> str:
+        """Get the latest rev hash from reflog"""
+        return self._execute_project_git(
+            project_name,
+            ['reflog', 'show', '--format=%H', '-1']
+        ).stdout.splitlines()[0]
+
+    def clean(self, project_name: str) -> subprocess.CompletedProcess:
+        """Recursively remove files that aren't under source control"""
+        return self._execute_project_git(self.get_project_root(project_name), ['clean', '-f'])
+
+    def reset_hard(self, project_name: str, ref: str) -> subprocess.CompletedProcess:
+        return self._execute_project_git(self.get_project_root(project_name), ['reset', '--hard', ref])
 
     def _execute_project_git(self, project_name: str, git_command: list) -> subprocess.CompletedProcess:
         """Simple wrapper for executing git commands by project name"""
