@@ -5,6 +5,7 @@ respective GitHub remotes.
 
 import logging
 import os
+import shutil
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -53,13 +54,12 @@ class GitClient2:
         Records reflog position before doing anything and resets to this position if any of the git commands fail.
         """
         initial_ref = self.get_latest_ref(project_name)
+        backup_path = self.backup_repo(project_name)
         try:
             yield lambda cmd: self._execute_project_git(project_name, cmd)
         except GitCommandError as exc:
-            self.reset_hard(project_name, initial_ref)
-            logger.warning('')  # TODO
-        finally:
-            self.clean(project_name)
+            self.restore_repo(project_name, backup_path)
+            logger.error('%s: git commands failed; repo backup %s restored', project_name, initial_ref)
 
     def get_latest_ref(self, project_name: str) -> str:
         """Get the latest rev hash from reflog"""
@@ -279,3 +279,38 @@ class GitClient2:
             project_name,
             ['log', f'{tag_name}...develop', '--merges', '--oneline', ]
         ).stdout.splitlines()) - 1  # The first result will be the merge commit from last release
+
+    def backup_repo(self, project_name: str) -> str:
+        """Create a backup of the entire local repo folder and return the destination
+
+        :return: the dst path
+        """
+        ref = self.get_latest_ref(project_name)[:7]
+        return helpers.copytree(
+            self.get_project_root(project_name),
+            self.get_backups_path(project_name),
+            ref,
+        )
+
+    def restore_repo(self, project_name: str, backup_path: str) -> str:
+        """Restore a repo backup directory to its original location
+
+        :param backup_path: absolute path to the backup's root as returned by `backup_repo()`
+        """
+        # create a backup of the backup so it can be moved using the atomic `shutil.move`
+        backup_swap = helpers.copytree(
+            src=backup_path,
+            dst_parent=self.get_backups_path(project_name),
+            dst=self.get_latest_ref(project_name)[:7] + '.swap',
+        )
+        # move the backup to the normal repo location
+        project_root = self.get_project_root(project_name)
+        shutil.rmtree(project_root)
+        return shutil.move(src=backup_swap, dst=project_root)
+
+    def get_backups_path(self, project_name: str = None) -> str:
+        """Get the backups dir path, either for all projects, or for the given project name"""
+        return os.path.join(
+            *[self.repos_root, '.backups']
+            + ([project_name] if project_name else [])
+        )

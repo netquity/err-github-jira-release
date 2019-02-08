@@ -1,3 +1,5 @@
+import os
+import shutil
 import subprocess
 
 
@@ -46,3 +48,16 @@ def bump_version(version: str, release_type: str) -> str:
         version_array[release_type+1:] = [0] * (PATCH - release_type)
 
         return '.'.join(str(version) for version in version_array)
+
+
+def copytree(src: str, dst_parent: str, dst: str) -> str:
+    """A simple wrapper for `shutil.copytree` which makes sure required parent directory exists
+
+    :param src: the dir to be copied
+    :param dst_parent: the parent location to copy the src to
+    :param dst: the name of the folder to hold a copy of the src
+    """
+    if not os.path.exists(dst_parent):
+        os.makedirs(dst_parent)  # creates intermediate dirs
+
+    return shutil.copytree(src, f'{dst_parent}/{dst}')
