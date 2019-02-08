@@ -91,18 +91,11 @@ class JiraClient:
             )
             raise exc
 
-    def get_release_type(self, project_key: str, is_hotfix: bool = False) -> str:
+    def get_release_type(self, project_key: str) -> str:
         """Get the highest Release Type of all closed issues without a Fix Version."""
         search_string = self.get_issue_search_string(project_key) + 'AND "Release Type" = "{release_type}" '
         try:
-            if is_hotfix:
-                if (
-                        self.api.search_issues(
-                            jql_str=search_string.format(release_type='Hotfix')
-                        )
-                ):
-                    return 'Hotfix'
-            for release_type in ['Major', 'Minor', 'Patch']:
+            for release_type in ['Hotfix', 'Major', 'Minor', 'Patch']:
                 if (
                         self.api.search_issues(
                             jql_str=search_string.format(release_type=release_type),
