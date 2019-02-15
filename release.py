@@ -4,9 +4,12 @@ import errno
 import logging
 import os
 
+from typing import List, Tuple, Mapping
+
 from errbot import BotPlugin, arg_botcmd, ValidationException
 from errbot.botplugin import recurse_check_structure
-from gitclient import GitClient
+from errbot.backends.base import Message
+from gitclient2 import GitClient2
 from jiraclient import JiraClient
 
 import helpers
@@ -62,6 +65,8 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
 
         self.setup_repos()
         super().activate()
+        self.jira = JiraClient(self.get_jira_config())
+        self.gitclient = GitClient2(self.get_git_config())
 
     def setup_repos(self):
         """Clone the projects in the configuration into the `REPOS_ROOT` if they do not exist already."""
@@ -197,6 +202,29 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             color='green',
         )
 
+    def seal(self, msg: Message) -> str:
+        """Initiate the release sequence by tagging updated projects"""
+        updated_projects = self.gitclient.get_updated_repos(self.get_project_names())
+        new_tags = []
+        for project in updated_projects:
+            project_key = self.get_project_key(project.full_name)
+            new_version = self.jira.get_pending_version(project_key)
+            # TODO: create jira version?
+            # TODO: make sure new_version includes suffixes
+            # FIXME: should wrap all commands with gcmd, rather than individually inside gitclient2 code
+            self.gitclient.checkout_latest(project.full_name, 'develop')
+            self.gitclient.get_latest_ref(project.full_name)
+            self.gitclient.create_tag(project.full_name, new_version)
+
+            new_tags.append((project.name, new_version, ))
+
+        # TODO: build up new_tags value; change variable name
+        self._send_version_card(
+            msg,
+            fields=new_tags,
+        )
+
+
     def get_project_root(self, project_name: str) -> str:
         """Get the root of the project's Git repo locally."""
         return self.config['REPOS_ROOT'] + project_name
@@ -221,3 +249,14 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             'GITHUB_TOKEN': self.config['GITHUB_TOKEN'],
             'PROJECT_NAMES': self.get_project_names(),
         }
+
+    def _send_version_card(self, msg: Message, fields: List[Tuple[str]]) -> None:
+        """Send the Slack card containing version set information"""
+        return self.send_card(
+            in_reply_to=msg,  # TODO: sometimes the message should be sent to a different channel
+            summary="I've created a sealed release set. It includes the following versions:",
+            fields=(
+                *fields,
+            ),
+            color='green',
+        )
