@@ -1,13 +1,16 @@
 """
-This module provides high-level support for managing a local git repository and consolidating its changes with GitHub.
+This module provides high-level support for managing local git repositories and consolidating changes with their
+respective GitHub remotes.
 """
 
 import logging
 import os
-import sys
+import shutil
 import subprocess
+import sys
+from contextlib import contextmanager
 
-from typing import Callable, Union, List
+from typing import Union, Callable, List, Generator
 
 from github import Github, PaginatedList
 from github.Repository import Repository
@@ -21,140 +24,177 @@ class GitCommandError(Exception):
     """A git command has failed"""
 
 
+def _execute_path_git(project_root: str, git_command: list) -> subprocess.CompletedProcess:
+    """Execute a git command in a specific directory"""
+    try:
+        return helpers.run_subprocess(
+            ['git'] + git_command,
+            cwd=project_root,
+        )
+    except subprocess.CalledProcessError:
+        logger.exception(
+            'Failed git command=%s, output=%s',
+            git_command,
+            sys.exc_info()[1].stdout,
+        )
+        raise GitCommandError()
+
+
 class GitClient:
-    """Manage a local repo and its remote"""
+    """Manage local repos and their remotes"""
     def __init__(self, config: dict):
-        self.root = config['ROOT']
-        self.new_version_name = config['NEW_VERSION_NAME']
-        self.github_org = config['GITHUB_ORG']
-        self.project_name = config['PROJECT_NAME']
-        self.org = Github(config['GITHUB_TOKEN']).get_organization(
-            self.github_org,
-        )
-        self.origin = self.org.get_repo(
-            self.project_name,
-        )
+        self.repos_root = config['REPOS_ROOT']
+        self.project_names = config['PROJECT_NAMES']
+        self.github = Github(config['GITHUB_TOKEN'])
 
-    def execute_command(self, git_command: list):
-        """Execute a git command"""
+    @contextmanager
+    def _gcmd(self, project_name: str):  # TODO: add Generator hint
+        """A context manager for interacting with local git repos in a safer way
+
+        Records reflog position before doing anything and resets to this position if any of the git commands fail.
+        """
+        initial_ref = self.get_latest_ref(project_name)
+        backup_path = self._backup_repo(project_name)
         try:
-            return helpers.run_subprocess(
-                ['git'] + git_command,
-                cwd=self.root,
-            )
-        except subprocess.CalledProcessError:
-            logger.exception(
-                'Failed git command=%s, output=%s',
-                git_command,
-                sys.exc_info()[1].stdout,
-            )
-            raise GitCommandError()
+            yield lambda cmd: self._execute_project_git(project_name, cmd)
+        except GitCommandError as exc:
+            self._restore_repo(project_name, backup_path)
+            logger.error('%s: git commands failed; repo backup %s restored', project_name, initial_ref)
 
-    def create_tag(self):
+    def get_latest_ref(self, project_name: str) -> str:
+        """Get the latest rev hash from reflog"""
+        return self._execute_project_git(
+            project_name,
+            ['reflog', 'show', '--format=%H', '-1']
+        ).stdout.splitlines()[0]
+
+    def clean(self, project_name: str) -> subprocess.CompletedProcess:
+        """Recursively remove files that aren't under source control"""
+        return self._execute_project_git(self._get_project_root(project_name), ['clean', '-f'])
+
+    def reset_hard(self, project_name: str, ref: str) -> subprocess.CompletedProcess:
+        return self._execute_project_git(self._get_project_root(project_name), ['reset', '--hard', ref])
+
+    def _execute_project_git(self, project_name: str, git_command: list) -> subprocess.CompletedProcess:
+        """Simple wrapper for executing git commands by project name"""
+        return _execute_path_git(self._get_project_root(project_name), git_command)
+
+    def _get_project_root(self, project_name: str) -> str:
+        """Get the full path to the project root"""
+        return os.path.join(self.repos_root, project_name)
+
+    def create_tag(self, project_name: str, tag_name: str):
         """Create a git tag"""
-        self.execute_command(
-            ['tag', '-s', 'v' + self.new_version_name, '-m', 'v' + self.new_version_name, ]
+        tag_name = f'v{tag_name}'
+        self._execute_project_git(
+            project_name,
+            ['tag', '-s', tag_name, '-m', tag_name, ]
         )
 
-    def create_ref(self):
+    def create_ref(self, project_name: str, new_version_name: str) -> None:
         """Create a ref and push it to origin
 
         https://developer.github.com/v3/git/refs/#create-a-reference
         """
-        self.origin.create_git_ref(
-            'refs/tags/{}'.format('v' + self.new_version_name),
-            self.get_rev_hash('master'),  # TODO: this will have to be something else for hotfixes
+        self._get_remote_repo(project_name).create_git_ref(
+            f'refs/tags/v{new_version_name}',
+            self.get_rev_hash(project_name, 'master'),  # TODO: this will have to be something else for hotfixes
         )
 
-    def create_release(self, release_notes: str):
+    def create_release(self, project_name: str, release_notes: str, new_version_name: str):
         """Create a GitHub release object and push it origin
 
         https://developer.github.com/v3/repos/releases/#create-a-release
         """
-        self.origin.create_git_release(
-            tag='v' + self.new_version_name,
-            name='{} - Version {}'.format(self.project_name, self.new_version_name),
+        self._get_remote_repo(project_name).create_git_release(
+            tag=f'v{new_version_name}',
+            name=f'{project_name} - Version {new_version_name}',
             message=release_notes,
             draft=False,
             prerelease=False,
         )
 
-    def get_rev_hash(self, ref: str) -> str:
+    def _get_remote_repo(self, project_name: str):
+        return self.github.get_repo(project_name)
+
+    def get_rev_hash(self, project_name: str, ref: str) -> str:
         """Get the SHA1 hash of a particular git ref"""
-        return self.execute_command(
+        return self._execute_project_git(
+            project_name,
             ['rev-parse', ref]
         ).stdout.strip()  # Get rid of the newline character at the end
 
-    def merge_and_create_release_commit(self, release_notes: str, changelog_path: str):
+    def merge_and_create_release_commit(
+            self, project_name: str, new_version_name: str,
+            release_notes: str, changelog_path: str
+    ) -> None:
         """Create a release commit based on origin/develop and merge it to master"""
-        for git_command in [
-                # TODO: deal with merge conflicts in an interactive way
-                ['fetch', '-p'],
-                ['checkout', '-B', 'release-{}'.format(self.new_version_name), 'origin/develop'],
-        ]:
-            self.execute_command(git_command)
+        with self._gcmd(project_name) as gcmd:
+            for git_command in [
+                    # TODO: deal with merge conflicts in an interactive way
+                    ['fetch', '-p'],
+                    ['checkout', '-B', f'release-{new_version_name}', 'origin/develop'],
+            ]:
+                gcmd(git_command)
 
-        helpers.update_changelog_file(
-            changelog_path,
-            release_notes,
-            logger,
-        )
+            helpers.update_changelog_file(
+                changelog_path,
+                release_notes,
+                logger,
+            )
 
-        for git_command in [
-                ['add', changelog_path],
-                ['commit', '-m', 'Release {}'.format(self.new_version_name)],
-                ['checkout', '-B', 'master', 'origin/master'],
-                ['merge', '--no-ff', '--no-edit', 'release-{}'.format(self.new_version_name)],
-                ['push', 'origin', 'master'],
-        ]:
-            self.execute_command(git_command)
+            for git_command in [
+                    ['add', changelog_path],
+                    ['commit', '-m', f'Release {new_version_name}'],
+                    ['checkout', '-B', 'master', 'origin/master'],
+                    ['merge', '--no-ff', '--no-edit', 'release-{new_version_name}'],
+                    ['push', 'origin', 'master'],
+            ]:
+                gcmd(git_command)
 
-    def update_develop(self):
+    def update_develop(self, project_name: str) -> None:
         """Merge master branch to develop"""
-        for git_command in [
-                ['fetch', '-p'],
-                ['checkout', '-B', 'develop', 'origin/develop'],
-                ['merge', '--no-ff', '--no-edit', 'origin/master'],
-                ['push', 'origin', 'develop'],
-        ]:
-            self.execute_command(git_command)
+        with self._gcmd(project_name) as gcmd:
+            for git_command in [
+                    ['fetch', '-p'],
+                    ['checkout', '-B', 'develop', 'origin/develop'],
+                    ['merge', '--no-ff', '--no-edit', 'origin/master'],
+                    ['push', 'origin', 'develop'],
+            ]:
+                gcmd(git_command)
 
     @property
-    def release_url(self) -> str:
+    def release_url(self, project_name: str, new_version_name: str) -> str:
         """Get the GitHub release URL"""
-        return 'https://github.com/{github_org}/{project_name}/releases/tag/{new_version_name}'.format(
-            github_org=self.github_org,
-            project_name=self.project_name,
-            new_version_name='v' + self.new_version_name,
-        )
+        return f'https://github.com/{project_name}/releases/tag/{new_version_name}'
 
-    def add_release_notes_to_develop(self, release_notes: str) -> str:
+    def add_release_notes_to_develop(self, project_name: str, new_version_name: str, release_notes: str) -> str:
         """Wrap subprocess calls with some project-specific defaults.
 
         :return: Release commit hash.
         """
-        for git_command in [
-                # TODO: deal with merge conflicts in an interactive way
-                ['fetch', '-p'],
-                ['checkout', '-B', 'develop', 'origin/develop'],
-        ]:
-            self.execute_command(git_command)
+        with self._gcmd(project_name) as gcmd:
+            for git_command in [
+                    # TODO: deal with merge conflicts in an interactive way
+                    ['fetch', '-p'],
+                    ['checkout', '-B', 'develop', 'origin/develop'],
+            ]:
+                gcmd(git_command)
 
-            changelog_path = os.path.join(self.root, 'CHANGELOG.md')
-            helpers.update_changelog_file(changelog_path, release_notes, logger)
+                changelog_path = os.path.join(
+                    self._get_project_root(project_name), 'CHANGELOG.md',
+                )
+                helpers.update_changelog_file(changelog_path, release_notes, logger)
 
-        for git_command in [
-                ['add', changelog_path],
-                # FIXME: make sure version number doesn't have `hotfix` in it, or does... just make it consistent
-                ['commit', '-m', 'Hotfix {}'.format(self.new_version_name)],
-                ['push', 'origin', 'develop'],
-        ]:
-            self.execute_command(git_command)
+            for git_command in [
+                    ['add', changelog_path],
+                    # FIXME: make sure version number doesn't have `hotfix` in it, or does... just make it consistent
+                    ['commit', '-m', f'Hotfix {new_version_name}'],
+                    ['push', 'origin', 'develop'],
+            ]:
+                gcmd(git_command)
 
-        return helpers.run_subprocess(
-            ['git', 'rev-parse', 'develop'],
-            cwd=self.root,
-        ).stdout.strip()  # Get rid of the newline character at the end
+        return self.get_rev_hash(project_name, 'develop')
 
     @classmethod
     def get_latest_pre_release_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:
@@ -216,11 +256,12 @@ class GitClient:
 
         http://developer.github.com/v3/repos/
         """
-        return [self.org.get_repo(project_name) for project_name in project_names]
+        return [self._get_remote_repo(project_name) for project_name in project_names]
 
     def is_updated_since_last_final(self, repo: Repository) -> bool:
         """Check if the given repo has commits to develop since the last final release"""
         return self.count_merges_since(
+            repo.full_name,
             GitClient.get_latest_final_tag(repo).name
         ) > 0
 
@@ -231,9 +272,45 @@ class GitClient:
             if self.is_updated_since_last_final(repo)
         ]
 
-    def count_merges_since(self, tag_name: str) -> int:
+    def count_merges_since(self, project_name: str, tag_name: str) -> int:
         """Get the number of merges to develop since the given tag"""
         # FIXME: assumes master and developed have not diverged, which is not a safe assumption at all
-        return len(self.execute_command(
+        return len(self._execute_project_git(
+            project_name,
             ['log', f'{tag_name}...develop', '--merges', '--oneline', ]
         ).stdout.splitlines()) - 1  # The first result will be the merge commit from last release
+
+    def _backup_repo(self, project_name: str) -> str:
+        """Create a backup of the entire local repo folder and return the destination
+
+        :return: the dst path
+        """
+        ref = self.get_latest_ref(project_name)[:7]
+        return helpers.copytree(
+            self._get_project_root(project_name),
+            self._get_backups_path(project_name),
+            ref,
+        )
+
+    def _restore_repo(self, project_name: str, backup_path: str) -> str:
+        """Restore a repo backup directory to its original location
+
+        :param backup_path: absolute path to the backup's root as returned by `_backup_repo()`
+        """
+        # create a backup of the backup so it can be moved using the atomic `shutil.move`
+        backup_swap = helpers.copytree(
+            src=backup_path,
+            dst_parent=self._get_backups_path(project_name),
+            dst=self.get_latest_ref(project_name)[:7] + '.swap',
+        )
+        # move the backup to the normal repo location
+        project_root = self._get_project_root(project_name)
+        shutil.rmtree(project_root)
+        return shutil.move(src=backup_swap, dst=project_root)
+
+    def _get_backups_path(self, project_name: str = None) -> str:
+        """Get the backups dir path, either for all projects, or for the given project name"""
+        return os.path.join(
+            *[self.repos_root, '.backups']
+            + ([project_name] if project_name else [])
+        )

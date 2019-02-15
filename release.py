@@ -9,7 +9,7 @@ from typing import List, Tuple, Mapping
 from errbot import BotPlugin, arg_botcmd, ValidationException
 from errbot.botplugin import recurse_check_structure
 from errbot.backends.base import Message
-from gitclient2 import GitClient2
+from gitclient import GitClient
 from jiraclient import JiraClient
 
 import helpers
@@ -66,7 +66,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         self.setup_repos()
         super().activate()
         self.jira = JiraClient(self.get_jira_config())
-        self.gitclient = GitClient2(self.get_git_config())
+        self.gitclient = GitClient(self.get_git_config())
 
     def setup_repos(self):
         """Clone the projects in the configuration into the `REPOS_ROOT` if they do not exist already."""
@@ -211,7 +211,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             new_version = self.jira.get_pending_version(project_key)
             # TODO: create jira version?
             # TODO: make sure new_version includes suffixes
-            # FIXME: should wrap all commands with gcmd, rather than individually inside gitclient2 code
+            # FIXME: should wrap all commands with gcmd, rather than individually inside gitclient code
             self.gitclient.checkout_latest(project.full_name, 'develop')
             self.gitclient.get_latest_ref(project.full_name)
             self.gitclient.create_tag(project.full_name, new_version)
@@ -225,7 +225,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         )
 
 
-    def get_project_root(self, project_name: str) -> str:
+    def _get_project_root(self, project_name: str) -> str:
         """Get the root of the project's Git repo locally."""
         return self.config['REPOS_ROOT'] + project_name
 
