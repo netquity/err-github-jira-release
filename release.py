@@ -100,7 +100,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             'changelog_path': '{}/CHANGELOG.md',
         }
 
-    def check_configuration(self, configuration: 'typing.Mapping') -> None:
+    def check_configuration(self, configuration: Mapping) -> None:
         """Allow for the `projects` key to have a variable number of definitions."""
         # Remove the `projects` key from both the template and the configuration and then test them separately
         try:
@@ -124,7 +124,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     @arg_botcmd('--hotfix', action="store_true", dest='is_hotfix', default=False, required=False)
     def version(
             self,
-            msg: 'errbot.backends.base.Message',
+            msg: Message,
             project_key: str,
             is_hotfix: bool,
     ) -> str:
@@ -229,7 +229,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         """Get the root of the project's Git repo locally."""
         return self.config['REPOS_ROOT'] + project_name
 
-    def get_project_names(self) -> list:
+    def get_project_names(self) -> List[str]:
         """Get the list of project names from the configuration"""
         return list(self.config['projects'])
 

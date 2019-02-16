@@ -20,7 +20,7 @@ def update_changelog_file(
         raise exc
 
 
-def run_subprocess(args: list, cwd: str=None):
+def run_subprocess(args: list, cwd: str = None) -> subprocess.CompletedProcess:
     """Run the local command described by `args` with some defaults applied."""
     return subprocess.run(
         args,
