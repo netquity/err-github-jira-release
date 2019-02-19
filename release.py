@@ -4,7 +4,7 @@ import errno
 import logging
 import os
 
-from typing import List, Tuple, Mapping
+from typing import List, Tuple, Mapping, Dict, Union
 
 from errbot import BotPlugin, arg_botcmd, ValidationException
 from errbot.botplugin import recurse_check_structure
@@ -205,25 +205,56 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     def seal(self, msg: Message) -> str:
         """Initiate the release sequence by tagging updated projects"""
         updated_projects = self.gitclient.get_updated_repos(self.get_project_names())
-        new_tags = []
+        card_dict = {}
         for project in updated_projects:
             project_key = self.get_project_key(project.full_name)
             new_version = self.jira.get_pending_version(project_key)
-            # TODO: create jira version?
+            new_jira_version = self.jira.create_version(project_key, self.jira.get_release_type(project_key))
+            assert new_version == new_jira_version.name
             # TODO: make sure new_version includes suffixes
             # FIXME: should wrap all commands with gcmd, rather than individually inside gitclient code
             self.gitclient.checkout_latest(project.full_name, 'develop')
             self.gitclient.get_latest_ref(project.full_name)
             self.gitclient.create_tag(project.full_name, new_version)
 
-            new_tags.append((project.name, new_version, ))
+            card_dict[project.full_name] = {
+                'Key': project_key,
+                'Release Type': self.jira.get_release_type(project_key),
 
-        # TODO: build up new_tags value; change variable name
-        self._send_version_card(
-            msg,
-            fields=new_tags,
-        )
+                'Previous Version': '<{url}|{tag}>'.format(
+                    url=self.gitclient.get_latest_final_tag_url(project.full_name),
+                    tag=self.gitclient.get_latest_final_tag_name(project.full_name),
+                ),
+                'Previous vCommit': self.gitclient.get_latest_final_tag_sha(project.name),
 
+                'Merge Count': self.gitclient.get_merge_count(project.full_name),
+                'New Migrations': self.gitclient.get_migration_count(project.full_name),
+
+                'Jira Version Link': '<{url}|{tag}>'.format(
+                    url=self.jira.get_release_url(
+                        project_key,
+                        new_jira_version.id,
+                    ),
+                    tag=new_jira_version.name,
+                ),
+
+                # To be removed for `fields`
+                'New Version Name': new_jira_version,
+                'GitHub Release URL': self.gitclient.release_url(project_key, new_jira_version.name),
+                # TODO: find a good public source for thumbnails; follow license
+                'thumbnail': 'https://static.thenounproject.com/png/1662598-200.png',
+            }
+
+        yield f"{len(card_dict)} projects updated: \n\t• " + '\n\t• '.join(list(card_dict))
+
+        for name, fields in card_dict.items():
+            # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time:
+            # https://api.slack.com/docs/message-attachments#attachment_limits
+            self._send_version_card(
+                msg,
+                project_name=name,
+                card_dict=fields,
+            )
 
     def _get_project_root(self, project_name: str) -> str:
         """Get the root of the project's Git repo locally."""
@@ -232,6 +263,11 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     def get_project_names(self) -> List[str]:
         """Get the list of project names from the configuration"""
         return list(self.config['projects'])
+
+    def get_project_key(self, project_name: str) -> str:
+        """Get the Jira project key for the given project name"""
+        # TODO: catch `KeyError`
+        return self.config['projects'][project_name]
 
     def get_jira_config(self) -> dict:
         """Return data required for initializing JiraClient"""
@@ -250,13 +286,18 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             'PROJECT_NAMES': self.get_project_names(),
         }
 
-    def _send_version_card(self, msg: Message, fields: List[Tuple[str]]) -> None:
-        """Send the Slack card containing version set information"""
-        return self.send_card(
-            in_reply_to=msg,  # TODO: sometimes the message should be sent to a different channel
-            summary="I've created a sealed release set. It includes the following versions:",
-            fields=(
-                *fields,
-            ),
+    def _send_version_card(self, message: Message, project_name: str, card_dict: Dict[str, Union[str, int]]) -> None:
+        """Send the Slack card containing version set information
+
+        :param message:
+        :param project_name:
+        :param card_dict: a dict of values to be displayed on the version card
+        """
+        return self.send_card(  # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time
+            title=f'{project_name} - {card_dict.pop("New Version Name")}',
+            link=card_dict.pop('GitHub Release URL'),
+            in_reply_to=message,  # TODO: sometimes the message should be sent to a different channel
+            thumbnail=card_dict.pop('thumbnail'),
+            fields=tuple(card_dict.items()),
             color='green',
         )
