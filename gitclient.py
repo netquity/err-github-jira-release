@@ -163,7 +163,15 @@ class GitClient:
             ]:
                 gcmd(git_command)
 
-    @property
+    def checkout_latest(self, project_name: str, ref: str) -> None:
+        """Check out the latest version of develop for the given project"""
+        with self._gcmd(project_name) as gcmd:
+            for git_command in [
+                    ['fetch', '-p'],
+                    ['checkout', '-B', ref, f'origin/{ref}'],
+            ]:
+                gcmd(git_command)
+
     def release_url(self, project_name: str, new_version_name: str) -> str:
         """Get the GitHub release URL"""
         return f'https://github.com/{project_name}/releases/tag/{new_version_name}'
@@ -205,10 +213,14 @@ class GitClient:
 
     def is_updated_since_last_final(self, repo: Repository) -> bool:
         """Check if the given repo has commits to develop since the last final release"""
-        return self.count_merges_since(
+        return self.get_merge_count_since(
             repo.full_name,
             GitClient.get_latest_final_tag(repo).name
         ) > 0
+
+    def get_updated_repo_names(self, project_names: List[str]) -> List[str]:
+        """Get a list of the full names of the repos that have commits to develop since last final release"""
+        return [project.full_name for project in self.get_updated_repos(project_names)]
 
     def get_updated_repos(self, project_names: List[str]) -> List[Repository]:
         """Get a list of repos that have commits to develop since the last final release"""
@@ -217,7 +229,16 @@ class GitClient:
             if self.is_updated_since_last_final(repo)
         ]
 
-    def count_merges_since(self, project_name: str, tag_name: str) -> int:
+    def get_merge_count(self, project_name: str) -> int:
+        """Get the number of merges to develop since the last final tag"""
+        return self.get_merge_count_since(
+            project_name,
+            self.get_latest_final_tag(
+                self._get_remote_repo(project_name),
+            ),
+        )
+
+    def get_merge_count_since(self, project_name: str, tag_name: str) -> int:
         """Get the number of merges to develop since the given tag"""
         # FIXME: assumes master and developed have not diverged, which is not a safe assumption at all
         return len(self._execute_project_git(
@@ -272,6 +293,24 @@ class GitClient:
         However, the presence of a SemVer metadata segment has no bearing on whether it's a pre-release tag or not.
         """
         return cls.find_tag(origin, cls.is_prerelease_tag_name)
+
+    def get_latest_final_tag_name(self, project_name: str) -> str:
+        return GitClient.get_latest_final_tag(self._get_remote_repo(project_name)).tag
+
+    def get_latest_final_tag_sha(self, project_name: str) -> str:
+        return GitClient.get_latest_final_tag(self._get_remote_repo(project_name)).sha
+
+    def get_latest_final_tag_url(self, project_name: str) -> str:
+        return GitClient.get_latest_final_tag(self._get_remote_repo(project_name)).url
+
+    # TODO: this is very Django specific, figure out less opinionated way for non-Django users
+    def get_migration_count(self, project_name: str) -> int:
+        tag_name = self.get_latest_final_tag_name(project_name)
+        with self._gcmd(project_name) as gcmd:
+            return len(gcmd([
+                'diff', '--name-status', '--diff-filter=A',
+                f'HEAD..{tag_name}', '--', 'src/**/migrations/',
+            ]).stdout.strip().splitlines())
 
     @classmethod
     def get_latest_final_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:

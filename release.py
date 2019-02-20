@@ -204,31 +204,33 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
 
     def seal(self, msg: Message) -> str:
         """Initiate the release sequence by tagging updated projects"""
-        updated_projects = self.gitclient.get_updated_repos(self.get_project_names())
+        updated_project_names = self.gitclient.get_updated_repo_names(self.get_project_names())
         card_dict = {}
-        for project in updated_projects:
-            project_key = self.get_project_key(project.full_name)
+        for project_name in updated_project_names:
+            # TODO: wrap in a try/except and roll back repos+jira releases on any kind of failure
+            project_key = self.get_project_key(project_name)
             new_version = self.jira.get_pending_version(project_key)
             new_jira_version = self.jira.create_version(project_key, self.jira.get_release_type(project_key))
             assert new_version == new_jira_version.name
             # TODO: make sure new_version includes suffixes
             # FIXME: should wrap all commands with gcmd, rather than individually inside gitclient code
-            self.gitclient.checkout_latest(project.full_name, 'develop')
-            self.gitclient.get_latest_ref(project.full_name)
-            self.gitclient.create_tag(project.full_name, new_version)
+            self.gitclient.checkout_latest(project_name, 'develop')
+            self.gitclient.get_latest_ref(project_name)
+            self.gitclient.create_tag(project_name, new_version)
 
-            card_dict[project.full_name] = {
+            card_dict[project_name] = {
                 'Key': project_key,
                 'Release Type': self.jira.get_release_type(project_key),
 
                 'Previous Version': '<{url}|{tag}>'.format(
-                    url=self.gitclient.get_latest_final_tag_url(project.full_name),
-                    tag=self.gitclient.get_latest_final_tag_name(project.full_name),
+                    url=self.gitclient.get_latest_final_tag_url(project_name),
+                    tag=self.gitclient.get_latest_final_tag_name(project_name),
                 ),
-                'Previous vCommit': self.gitclient.get_latest_final_tag_sha(project.name),
+                'Previous vCommit': self.gitclient.get_latest_final_tag_sha(project_name),
 
-                'Merge Count': self.gitclient.get_merge_count(project.full_name),
-                'New Migrations': self.gitclient.get_migration_count(project.full_name),
+                'Merge Count': self.gitclient.get_merge_count(project_name),
+                # TODO: it would be nice to be able to dynamically pass in functions for fields to show up on the card
+                'New Migrations': self.gitclient.get_migration_count(project_name),  # FIXME: too django-specific
 
                 'Jira Version Link': '<{url}|{tag}>'.format(
                     url=self.jira.get_release_url(
