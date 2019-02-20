@@ -60,6 +60,7 @@ class GitClient:
         except GitCommandError as exc:
             self._restore_repo(project_name, backup_path)
             logger.error('%s: git commands failed; repo backup %s restored', project_name, initial_ref)
+            raise exc
 
     def get_latest_ref(self, project_name: str) -> str:
         """Get the latest rev hash from reflog"""
