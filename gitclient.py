@@ -48,7 +48,7 @@ class GitClient:
         self.github = Github(config['GITHUB_TOKEN'])
 
     @contextmanager
-    def _gcmd(self, project_name: str):  # TODO: add Generator hint
+    def _gcmd(self, project_name: str) -> Generator[subprocess.CompletedProcess, None, None]:
         """A context manager for interacting with local git repos in a safer way
 
         Records reflog position before doing anything and resets to this position if any of the git commands fail.
