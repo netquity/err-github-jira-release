@@ -51,7 +51,7 @@ Hotfix releases and standard releases follow the same versioning scheme, with a 
 ## Format Example
 - `1.1.0-rc.1+sealed`: entire version string
 - `1.1.0`: SemVer release version segment
-- `-rc.1`: pre-release segment
+- `-rc.1`: pre-release segment (starts at 1)
 - `+sealed`: metadata segment
 
 ## Workflow Example
