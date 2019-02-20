@@ -55,6 +55,9 @@ Hotfix releases and standard releases follow the same versioning scheme, with a 
 - `+sealed`: metadata segment
 
 ## Workflow Example
+
+![flowchart](flowchart.png)
+
 - start with `baseVersion=1.0.0`:
   - this is the last shipped version
   - `master` and `develop` are both here
