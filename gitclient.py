@@ -212,34 +212,34 @@ class GitClient:
         """
         return [self._get_remote_repo(project_name) for project_name in project_names]
 
-    def is_updated_since_last_final(self, repo: Repository) -> bool:
+    def _is_updated_since_last_final(self, repo: Repository) -> bool:
         """Check if the given repo has commits to develop since the last final release"""
-        return self.get_merge_count_since(
+        return self._get_merge_count_since(
             repo.full_name,
-            GitClient.get_latest_final_tag(repo).name
+            GitClient._get_latest_final_tag(repo).name
         ) > 0
 
     def get_updated_repo_names(self, project_names: List[str]) -> List[str]:
         """Get a list of the full names of the repos that have commits to develop since last final release"""
-        return [project.full_name for project in self.get_updated_repos(project_names)]
+        return [project.full_name for project in self._get_updated_repos(project_names)]
 
-    def get_updated_repos(self, project_names: List[str]) -> List[Repository]:
+    def _get_updated_repos(self, project_names: List[str]) -> List[Repository]:
         """Get a list of repos that have commits to develop since the last final release"""
         return [
             repo for repo in self.get_all_repos(project_names)
-            if self.is_updated_since_last_final(repo)
+            if self._is_updated_since_last_final(repo)
         ]
 
     def get_merge_count(self, project_name: str) -> int:
         """Get the number of merges to develop since the last final tag"""
-        return self.get_merge_count_since(
+        return self._get_merge_count_since(
             project_name,
-            self.get_latest_final_tag(
+            self._get_latest_final_tag(
                 self._get_remote_repo(project_name),
             ),
         )
 
-    def get_merge_count_since(self, project_name: str, tag_name: str) -> int:
+    def _get_merge_count_since(self, project_name: str, tag_name: str) -> int:
         """Get the number of merges to develop since the given tag"""
         # FIXME: assumes master and developed have not diverged, which is not a safe assumption at all
         return len(self._execute_project_git(
@@ -288,7 +288,7 @@ class GitClient:
         :param min_version: if included, will ignore all versions below this one
         :return: either the version string of the latest pre-release tag or `None` if one wasn't found
         """
-        latest_pre_tag = GitClient.get_latest_pre_release_tag(self._get_remote_repo(project_name))
+        latest_pre_tag = GitClient._get_latest_pre_release_tag(self._get_remote_repo(project_name))
         if not min_version:
             return latest_pre_tag
         if GitClient._is_older_version(min_version, latest_pre_tag):
@@ -319,7 +319,7 @@ class GitClient:
         return match(old_version[1:], f"<{new_version[1:]}")
 
     @classmethod
-    def get_latest_pre_release_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:
+    def _get_latest_pre_release_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:
         """Get the latest pre-release tag
 
         Tags are identified as pre-release tags if they contain a pre-release segment such as the following, where the
@@ -329,19 +329,19 @@ class GitClient:
 
         However, the presence of a SemVer metadata segment has no bearing on whether it's a pre-release tag or not.
         """
-        return cls.find_tag(origin, cls.is_prerelease_tag_name)
+        return cls._find_tag(origin, cls._is_prerelease_tag_name)
 
     def get_latest_final_tag_name(self, project_name: str) -> str:
         """Get the latest final release's tag name"""
-        return GitClient.get_latest_final_tag(self._get_remote_repo(project_name)).tag
+        return GitClient._get_latest_final_tag(self._get_remote_repo(project_name)).tag
 
     def get_latest_final_tag_sha(self, project_name: str) -> str:
         """Get the latest final release's tag sha"""
-        return GitClient.get_latest_final_tag(self._get_remote_repo(project_name)).sha
+        return GitClient._get_latest_final_tag(self._get_remote_repo(project_name)).sha
 
     def get_latest_final_tag_url(self, project_name: str) -> str:
         """Get the latest final release's tag GitHub URL"""
-        return GitClient.get_latest_final_tag(self._get_remote_repo(project_name)).url
+        return GitClient._get_latest_final_tag(self._get_remote_repo(project_name)).url
 
     # TODO: this is very Django specific, figure out less opinionated way for non-Django users
     def get_migration_count(self, project_name: str) -> int:
@@ -353,29 +353,29 @@ class GitClient:
             ]).stdout.strip().splitlines())
 
     @classmethod
-    def get_latest_final_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:
+    def _get_latest_final_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:
         """Get the latest final tag
 
         Final tags do not contain a pre-release segment, but may contain a SemVer metadata segment.
         """
-        return cls.find_tag(origin, lambda tag: not cls.is_prerelease_tag_name(tag))
+        return cls._find_tag(origin, lambda tag: not cls._is_prerelease_tag_name(tag))
 
     @classmethod
-    def find_tag(cls, origin: Repository, test: Callable[[str], bool]) -> Union['github.Tag.tag', None]:
+    def _find_tag(cls, origin: Repository, test: Callable[[str], bool]) -> Union['github.Tag.tag', None]:
         """Return the first tag that passes a given test or `None` if none found"""
-        return next((tag for tag in cls.get_tags(origin) if test(tag.name)), None)
+        return next((tag for tag in cls._get_tags(origin) if test(tag.name)), None)
 
     @classmethod
-    def is_prerelease_tag_name(cls, tag_name: str) -> bool:
+    def _is_prerelease_tag_name(cls, tag_name: str) -> bool:
         """Determine whether the given tag string is a pre-release tag string
 
-        >>> GitClient.is_prerelease_tag_name('v1.0.0')
+        >>> GitClient._is_prerelease_tag_name('v1.0.0')
         False
-        >>> GitClient.is_prerelease_tag_name('v1.0.0-rc.1')
+        >>> GitClient._is_prerelease_tag_name('v1.0.0-rc.1')
         True
-        >>> GitClient.is_prerelease_tag_name('v1.0.0-rc.1+sealed')
+        >>> GitClient._is_prerelease_tag_name('v1.0.0-rc.1+sealed')
         True
-        >>> GitClient.is_prerelease_tag_name('v1.0.0+20130313144700')
+        >>> GitClient._is_prerelease_tag_name('v1.0.0+20130313144700')
         False
         """
         import semver
@@ -390,6 +390,6 @@ class GitClient:
             raise exc
 
     @classmethod
-    def get_tags(cls, origin: Repository) -> PaginatedList.PaginatedList:
+    def _get_tags(cls, origin: Repository) -> PaginatedList.PaginatedList:
         """Get all the tags for the repo"""
         return origin.get_tags()  # TODO: consider searching local repo instead of GitHub
