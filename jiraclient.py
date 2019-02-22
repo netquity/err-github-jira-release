@@ -8,6 +8,8 @@ import logging
 
 from jinja2 import Environment, FileSystemLoader
 
+from helpers import Stages
+
 logger = logging.getLogger(__file__)
 
 
@@ -58,6 +60,22 @@ class JiraClient:
                 project_key.upper(),
             )
             raise exc
+
+    def get_pending_version_name(
+            self,
+            project_key: str,
+            stage: Stages,
+            final_version: str,
+            pre_version: str = None
+    ) -> str:
+        """Get a project's next version number, including merged, but yet unreleased, tickets"""
+        from helpers import bump_version
+        return bump_version(
+            release_type=self.get_release_type(project_key),
+            stage=stage.verb,
+            final_version=final_version[1:],  # dropping the leading `v`
+            pre_version=pre_version,
+        )
 
     def get_release_notes(self, version: resources.Version) -> str:
         """Produce release notes for a JIRA project version."""
@@ -143,14 +161,10 @@ class JiraClient:
 
             self.api.transition_issue(issue, 'Close Issue')
 
-    def create_version(self, project_key: str, release_type: str) -> resources.Version:
+    def create_version(self, project_key: str, new_version: str) -> resources.Version:
         """Create a Jira version, applying the appropriate version bump"""
-        from helpers import bump_version
         return self.api.create_version(
-            bump_version(
-                self.get_latest_version(project_key.upper()).name.split('-')[0],  # Check for `-Hotfix` suffix
-                release_type,
-            ),
+            new_version,
             project=project_key.upper(),
             released=True,
             releaseDate=datetime.datetime.now().date().isoformat(),

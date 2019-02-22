@@ -6,7 +6,7 @@ import os
 
 from typing import List, Tuple, Mapping, Dict, Union
 
-from errbot import BotPlugin, arg_botcmd, ValidationException
+from errbot import BotPlugin, botcmd, arg_botcmd, ValidationException
 from errbot.botplugin import recurse_check_structure
 from errbot.backends.base import Message
 from gitclient import GitClient
@@ -202,17 +202,24 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             color='green',
         )
 
+    @botcmd
     def seal(self, msg: Message) -> str:
         """Initiate the release sequence by tagging updated projects"""
         updated_project_names = self.gitclient.get_updated_repo_names(self.get_project_names())
         card_dict = {}
         for project_name in updated_project_names:
             # TODO: wrap in a try/except and roll back repos+jira releases on any kind of failure
+            latest_final = self.gitclient.get_latest_final_tag_name(project_name)
             project_key = self.get_project_key(project_name)
-            new_version = self.jira.get_pending_version(project_key)
-            new_jira_version = self.jira.create_version(project_key, self.jira.get_release_type(project_key))
+            new_version = self.jira.get_pending_version_name(
+                project_key,
+                helpers.Stages.SEALED,
+                latest_final,
+                self.gitclient.get_latest_pre_release_tag_name(project_name, min_version=latest_final),
+            )
+            new_jira_version = self.jira.create_version(project_key, new_version)
             assert new_version == new_jira_version.name
-            # TODO: make sure new_version includes suffixes
+
             # FIXME: should wrap all commands with gcmd, rather than individually inside gitclient code
             self.gitclient.checkout_latest(project_name, 'develop')
             self.gitclient.get_latest_ref(project_name)
