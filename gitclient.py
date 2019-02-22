@@ -332,12 +332,15 @@ class GitClient:
         return cls.find_tag(origin, cls.is_prerelease_tag_name)
 
     def get_latest_final_tag_name(self, project_name: str) -> str:
+        """Get the latest final release's tag name"""
         return GitClient.get_latest_final_tag(self._get_remote_repo(project_name)).tag
 
     def get_latest_final_tag_sha(self, project_name: str) -> str:
+        """Get the latest final release's tag sha"""
         return GitClient.get_latest_final_tag(self._get_remote_repo(project_name)).sha
 
     def get_latest_final_tag_url(self, project_name: str) -> str:
+        """Get the latest final release's tag GitHub URL"""
         return GitClient.get_latest_final_tag(self._get_remote_repo(project_name)).url
 
     # TODO: this is very Django specific, figure out less opinionated way for non-Django users
