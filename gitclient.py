@@ -282,6 +282,42 @@ class GitClient:
             + ([project_name] if project_name else [])
         )
 
+    def get_latest_pre_release_tag_name(self, project_name: str, min_version: str = None) -> Union[str, None]:
+        """Get the latest pre-release tag name
+
+        :param min_version: if included, will ignore all versions below this one
+        :return: either the version string of the latest pre-release tag or `None` if one wasn't found
+        """
+        latest_pre_tag = GitClient.get_latest_pre_release_tag(self._get_remote_repo(project_name))
+        if not min_version:
+            return latest_pre_tag
+        if GitClient._is_older_version(min_version, latest_pre_tag):
+            return latest_pre_tag
+        return None
+
+    @classmethod
+    def _is_older_version(cls, old_version: str, new_version: str) -> bool:
+        """Compare two version strings to determine if one is newer than the other
+
+        :param old_version: version string expected to be sorted before the new_version
+        :param new_version: version string expected to be sorted after the old_string
+        :return: True if expectations are correct and False otherwise
+        >>> GitClient._is_older_version('v1.0.0', 'v2.0.0')
+        True
+        >>> GitClient._is_older_version('v1.0.0', 'v1.0.0')
+        False
+        >>> GitClient._is_older_version('v1.0.0', 'v1.0.0-rc.1')
+        False
+        >>> GitClient._is_older_version('v1.0.0', 'v1.0.1-rc.1+sealed')
+        True
+        >>> GitClient._is_older_version('1.0.0', '2.0.0')  # need to include the leading `v`
+        Traceback (most recent call last):
+            ...
+        ValueError: .0.0 is not valid SemVer string
+        """
+        from semver import match
+        return match(old_version[1:], f"<{new_version[1:]}")
+
     @classmethod
     def get_latest_pre_release_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:
         """Get the latest pre-release tag
