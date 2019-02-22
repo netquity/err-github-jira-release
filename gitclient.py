@@ -331,13 +331,13 @@ class GitClient:
         """Determine whether the given tag string is a pre-release tag string
 
         >>> GitClient.is_prerelease_tag_name('v1.0.0')
-        false
+        False
         >>> GitClient.is_prerelease_tag_name('v1.0.0-rc.1')
-        true
+        True
         >>> GitClient.is_prerelease_tag_name('v1.0.0-rc.1+sealed')
-        true
+        True
         >>> GitClient.is_prerelease_tag_name('v1.0.0+20130313144700')
-        false
+        False
         """
         import semver
         try:
