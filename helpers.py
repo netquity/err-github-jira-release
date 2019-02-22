@@ -2,6 +2,28 @@ import os
 import shutil
 import subprocess
 import logging
+from enum import Enum
+
+
+class Stages(Enum):
+    """The different release stages"""
+    SEALED = 1
+    SENT = 2
+    SIGNED = 3
+
+    @property
+    def verb(self):
+        """Provide the verb used to transition into the given stage
+
+        For example, to transition into the SEALED stage, the user needs to perform the `seal` action"""
+        if self.name == Stages.SEALED.name:
+            return 'seal'
+        if self.name == Stages.SENT.name:
+            return 'send'
+        return 'sign'
+
+
+S = Stages  # Shortcuts  pylint:disable=invalid-name
 
 
 class InvalidStageTransitionError(Exception):
@@ -52,26 +74,26 @@ def bump_version(release_type: str, stage: str, final_version: str, pre_version:
                         for the first time
     :return: the new version string
 
-    >>> bump_version('patch', 'seal', '1.0.0',)
+    >>> bump_version('patch', S.SEALED.verb, '1.0.0',)
     '1.0.1-rc.1+seal'
-    >>> bump_version('minor', 'seal', '1.0.0',)
+    >>> bump_version('minor', S.SEALED.verb, '1.0.0',)
     '1.1.0-rc.1+seal'
-    >>> bump_version('minor', 'send', '1.0.0', '1.1.0-rc.1+seal')
+    >>> bump_version('minor', S.SENT.verb, '1.0.0', '1.1.0-rc.1+seal')
     '1.1.0-rc.1+send'
 
     # A full release cycle example
-    >>> bump_version('major', 'seal', '1.0.0',)  # first seal
+    >>> bump_version('major', S.SEALED.verb, '1.0.0',)  # first seal
     '2.0.0-rc.1+seal'
-    >>> bump_version('major', 'seal', '1.0.0',  '2.0.0-rc.1+seal',)  # second seal
+    >>> bump_version('major', S.SEALED.verb, '1.0.0',  '2.0.0-rc.1+seal',)  # second seal
     '2.0.0-rc.2+seal'
-    >>> bump_version('major', 'send', '1.0.0', '2.0.0-rc.2+seal',)
+    >>> bump_version('major', S.SENT.verb, '1.0.0', '2.0.0-rc.2+seal',)
     '2.0.0-rc.2+send'
-    >>> bump_version('major', 'sign', '1.0.0', '2.0.0-rc.2+send',)
+    >>> bump_version('major', S.SIGNED.verb, '1.0.0', '2.0.0-rc.2+send',)
     '2.0.0-rc.2+sign'
-    >>> bump_version('major', 'seal', '1.0.0', '2.0.0-rc.2+send',)
+    >>> bump_version('major', S.SEALED.verb, '1.0.0', '2.0.0-rc.2+send',)
     '2.0.0-rc.3+seal'
 
-    >>> bump_version('major', 'sign', '1.0.0', '2.0.0-rc.2+sign',)
+    >>> bump_version('major', S.SIGNED.verb, '1.0.0', '2.0.0-rc.2+sign',)
     Traceback (most recent call last):
         ...
     helpers.InvalidStageTransitionError: Cannot transition from sign to sign
@@ -86,7 +108,7 @@ def bump_version(release_type: str, stage: str, final_version: str, pre_version:
 
     if verinfo.get('prerelease', None):
         bumped_semver += f"-{verinfo['prerelease']}"
-    if stage == 'seal':
+    if stage == S.SEALED.verb:
         return semver.bump_prerelease(bumped_semver) + f"+{stage}"
     return bumped_semver + f"+{stage}"
 
@@ -101,63 +123,63 @@ def is_valid_transition(start: str, target: str) -> bool:
 
     :param start: the starting stage
     :param target: the desired end stage
-    >>> is_valid_transition('sign', 'sign')
+    >>> is_valid_transition(S.SIGNED.verb, S.SIGNED.verb)
     False
-    >>> is_valid_transition('sign', 'seal')
+    >>> is_valid_transition(S.SIGNED.verb, S.SEALED.verb)
     False
-    >>> is_valid_transition('sign', 'send')
+    >>> is_valid_transition(S.SIGNED.verb, S.SENT.verb)
     False
-    >>> is_valid_transition('seal', 'send')
+    >>> is_valid_transition(S.SEALED.verb, S.SENT.verb)
     True
-    >>> is_valid_transition('send', 'sign')
+    >>> is_valid_transition(S.SENT.verb, S.SIGNED.verb)
     True
-    >>> is_valid_transition('seal', 'seal')
+    >>> is_valid_transition(S.SEALED.verb, S.SEALED.verb)
     True
-    >>> is_valid_transition('seal', 'seal')
+    >>> is_valid_transition(S.SEALED.verb, S.SEALED.verb)
     True
-    >>> is_valid_transition('send', 'send')
+    >>> is_valid_transition(S.SENT.verb, S.SENT.verb)
     False
-    >>> is_valid_transition('sign', 'sign')
+    >>> is_valid_transition(S.SIGNED.verb, S.SIGNED.verb)
     False
-    >>> is_valid_transition('seal', 'sign')
+    >>> is_valid_transition(S.SEALED.verb, S.SIGNED.verb)
     False
-    >>> is_valid_transition('seal', 'send')
+    >>> is_valid_transition(S.SEALED.verb, S.SENT.verb)
     True
-    >>> is_valid_transition('send', 'seal')
+    >>> is_valid_transition(S.SENT.verb, S.SEALED.verb)
     True
-    >>> is_valid_transition('send', 'sign')
+    >>> is_valid_transition(S.SENT.verb, S.SIGNED.verb)
     True
 
-    >>> is_valid_transition(None, 'seal')
+    >>> is_valid_transition(None, S.SEALED.verb)
     True
-    >>> is_valid_transition(None, 'send')
+    >>> is_valid_transition(None, S.SENT.verb)
     Traceback (most recent call last):
         ...
     ValueError: Can only transition a final to the sealed stage but got target=send
-    >>> is_valid_transition(None, 'sign')
+    >>> is_valid_transition(None, S.SIGNED.verb)
     Traceback (most recent call last):
         ...
     ValueError: Can only transition a final to the sealed stage but got target=sign
-    >>> is_valid_transition('bad', 'seal')
+    >>> is_valid_transition('bad', S.SEALED.verb)
     Traceback (most recent call last):
         ...
     ValueError: sign, seal, and send are the only valid stage options. Got start=bad, target=seal
     """
     if start is None:
-        if target == 'seal':
+        if target == S.SEALED.verb:
             return True
         raise ValueError('Can only transition a final to the sealed stage but got target=%s' % target)
     if (
-            start not in ['sign', 'seal', 'send']
-            or target not in ['sign', 'seal', 'send']
+            start not in [S.SIGNED.verb, S.SEALED.verb, S.SENT.verb]
+            or target not in [S.SIGNED.verb, S.SEALED.verb, S.SENT.verb]
     ):
         raise ValueError('sign, seal, and send are the only valid stage options. Got start=%s, target=%s' % (
             start, target
         ))
     return not any([
-        start == 'sign',  # sign is the last stage; can't transition from it
-        start == 'send' and target == 'send',
-        start == 'seal' and target == 'sign',
+        start == S.SIGNED.verb,  # sign is the last stage; can't transition from it
+        start == S.SENT.verb and target == S.SENT.verb,
+        start == S.SEALED.verb and target == S.SIGNED.verb,
     ])
 
 
