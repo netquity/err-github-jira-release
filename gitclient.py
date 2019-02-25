@@ -244,7 +244,7 @@ class GitClient:
         # FIXME: assumes master and developed have not diverged, which is not a safe assumption at all
         return len(self._execute_project_git(
             project_name,
-            ['log', f'{tag_name}...develop', '--merges', '--oneline', ]
+            ['log', f'{tag_name}...origin/develop', '--merges', '--oneline', ]
         ).stdout.splitlines()) - 1  # The first result will be the merge commit from last release
 
     def _backup_repo(self, project_name: str) -> str:
