@@ -203,7 +203,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         )
 
     @botcmd
-    def seal(self, msg: Message) -> str:
+    def seal(self, msg: Message, args) -> str:
         """Initiate the release sequence by tagging updated projects"""
         updated_project_names = self.gitclient.get_updated_repo_names(self.get_project_names())
         card_dict = {}
@@ -233,7 +233,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     url=self.gitclient.get_latest_final_tag_url(project_name),
                     tag=self.gitclient.get_latest_final_tag_name(project_name),
                 ),
-                'Previous vCommit': self.gitclient.get_latest_final_tag_sha(project_name),
+                'Previous vCommit': self.gitclient.get_latest_final_tag_sha(project_name)[:7],
 
                 'Merge Count': self.gitclient.get_merge_count(project_name),
                 # TODO: it would be nice to be able to dynamically pass in functions for fields to show up on the card
