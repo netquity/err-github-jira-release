@@ -222,6 +222,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             self.gitclient.checkout_latest(project_name, 'develop')
             self.gitclient.get_latest_ref(project_name)
             self.gitclient.create_tag(project_name, new_version)
+            self.gitclient.create_ref(project_name, new_version)
 
             card_dict[project_name] = {
                 'Key': project_key,
