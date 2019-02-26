@@ -173,10 +173,6 @@ class GitClient:
             ]:
                 gcmd(git_command)
 
-    def release_url(self, project_name: str, new_version_name: str) -> str:
-        """Get the GitHub release URL"""
-        return f'https://github.com/{project_name}/releases/tag/{new_version_name}'
-
     def add_release_notes_to_develop(self, project_name: str, new_version_name: str, release_notes: str) -> str:
         """Wrap subprocess calls with some project-specific defaults.
 
@@ -236,7 +232,7 @@ class GitClient:
             project_name,
             self._get_latest_final_tag(
                 self._get_remote_repo(project_name),
-            ),
+            ).name,
         )
 
     def _get_merge_count_since(self, project_name: str, tag_name: str) -> int:
@@ -288,7 +284,7 @@ class GitClient:
         :param min_version: if included, will ignore all versions below this one
         :return: either the version string of the latest pre-release tag or `None` if one wasn't found
         """
-        latest_pre_tag = GitClient._get_latest_pre_release_tag(self._get_remote_repo(project_name))
+        latest_pre_tag = GitClient._get_latest_pre_release_tag(self._get_remote_repo(project_name)).name
         if not min_version:
             return latest_pre_tag
         if GitClient._is_older_version(min_version, latest_pre_tag):
@@ -333,11 +329,11 @@ class GitClient:
 
     def get_latest_final_tag_name(self, project_name: str) -> str:
         """Get the latest final release's tag name"""
-        return GitClient._get_latest_final_tag(self._get_remote_repo(project_name)).tag
+        return GitClient._get_latest_final_tag(self._get_remote_repo(project_name)).name
 
     def get_latest_final_tag_sha(self, project_name: str) -> str:
         """Get the latest final release's tag sha"""
-        return GitClient._get_latest_final_tag(self._get_remote_repo(project_name)).sha
+        return GitClient._get_latest_final_tag(self._get_remote_repo(project_name)).commit.sha
 
     def get_latest_final_tag_url(self, project_name: str) -> str:
         """Get the latest final release's tag GitHub URL"""
