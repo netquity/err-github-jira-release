@@ -350,6 +350,22 @@ class GitClient:
         """Get the GitHub release URL"""
         return f'https://github.com/{project_name}/releases/tag/v{new_version_name}'
 
+    def get_latest_compare_url(self, project_name: str) -> str:
+        """Get the URL to compare the latest final with the latest pre-release on GitHub"""
+        latest_final = self.get_latest_final_tag_name(project_name)
+        return self._get_compare_url(
+            project_name,
+            old_tag=latest_final,
+            new_tag=self.get_latest_pre_release_tag_name(
+                project_name,
+                min_version=latest_final,
+            )
+        )
+
+    def _get_compare_url(self, project_name: str, old_tag: str, new_tag: str) -> str:
+        """Get the URL to compare two tags on GitHub"""
+        return f'https://github.com/{project_name}/compare/{old_tag}...{new_tag}'
+
     # TODO: this is very Django specific, figure out less opinionated way for non-Django users
     def get_migration_count(self, project_name: str) -> int:
         tag_name = self.get_latest_final_tag_name(project_name)
