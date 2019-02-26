@@ -208,7 +208,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         updated_project_names = self.gitclient.get_updated_repo_names(self.get_project_names())
         card_dict = {}
         for project_name in updated_project_names:
-            # TODO: wrap in a try/except and roll back repos+jira releases on any kind of failure
+            # TODO: wrap in a try/except and roll back repos on any kind of failure
             latest_final = self.gitclient.get_latest_final_tag_name(project_name)
             project_key = self.get_project_key(project_name)
             new_version = self.jira.get_pending_version_name(
@@ -217,8 +217,6 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 latest_final,
                 self.gitclient.get_latest_pre_release_tag_name(project_name, min_version=latest_final),
             )
-            new_jira_version = self.jira.create_version(project_key, new_version)
-            assert new_version == new_jira_version.name
 
             # FIXME: should wrap all commands with gcmd, rather than individually inside gitclient code
             self.gitclient.checkout_latest(project_name, 'develop')
@@ -239,16 +237,8 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 # TODO: it would be nice to be able to dynamically pass in functions for fields to show up on the card
                 'New Migrations': self.gitclient.get_migration_count(project_name),  # FIXME: too django-specific
 
-                'Jira Version Link': '<{url}|{tag}>'.format(
-                    url=self.jira.get_release_url(
-                        project_key,
-                        new_jira_version.id,
-                    ),
-                    tag=new_jira_version.name,
-                ),
-
                 # To be removed for `fields`
-                'New Version Name': new_jira_version,
+                'New Version Name': new_version,
                 'GitHub Tag Comparison': self.gitclient.get_latest_compare_url(project_name),
                 # TODO: find a good public source for thumbnails; follow license
                 'thumbnail': 'https://static.thenounproject.com/png/1662598-200.png',
