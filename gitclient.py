@@ -358,7 +358,8 @@ class GitClient:
             )
         )
 
-    def _get_compare_url(self, project_name: str, old_tag: str, new_tag: str) -> str:
+    @classmethod
+    def _get_compare_url(cls, project_name: str, old_tag: str, new_tag: str) -> str:
         """Get the URL to compare two tags on GitHub"""
         return f'https://github.com/{project_name}/compare/{old_tag}...{new_tag}'
 
