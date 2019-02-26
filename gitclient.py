@@ -341,7 +341,14 @@ class GitClient:
 
     def get_latest_final_tag_url(self, project_name: str) -> str:
         """Get the latest final release's tag GitHub URL"""
-        return GitClient._get_latest_final_tag(self._get_remote_repo(project_name)).url
+        return self.release_url(
+            project_name,
+            self.get_latest_final_tag_name(project_name),
+        )
+
+    def release_url(self, project_name: str, new_version_name: str) -> str:
+        """Get the GitHub release URL"""
+        return f'https://github.com/{project_name}/releases/tag/v{new_version_name}'
 
     # TODO: this is very Django specific, figure out less opinionated way for non-Django users
     def get_migration_count(self, project_name: str) -> int:

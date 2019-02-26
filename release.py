@@ -249,7 +249,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
 
                 # To be removed for `fields`
                 'New Version Name': new_jira_version,
-                'GitHub Release URL': self.gitclient.release_url(project_key, new_jira_version.name),
+                'GitHub Release URL': self.gitclient.release_url(project_name, new_jira_version.name),
                 # TODO: find a good public source for thumbnails; follow license
                 'thumbnail': 'https://static.thenounproject.com/png/1662598-200.png',
             }
