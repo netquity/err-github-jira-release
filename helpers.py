@@ -4,6 +4,8 @@ import subprocess
 import logging
 from enum import Enum
 
+logger = logging.getLogger(__file__)
+
 
 class Stages(Enum):
     """The different release stages"""
@@ -193,4 +195,7 @@ def copytree(src: str, dst_parent: str, dst: str) -> str:
     if not os.path.exists(dst_parent):
         os.makedirs(dst_parent)  # creates intermediate dirs
 
-    return shutil.copytree(src, f'{dst_parent}/{dst}')
+    try:
+        return shutil.copytree(src, f'{dst_parent}/{dst}')
+    except FileExistsError:
+        logger.warning('Git repo backup %s already exists; ignoring.', f'{dst_parent}/{dst}')
