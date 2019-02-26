@@ -353,11 +353,13 @@ class GitClient:
     # TODO: this is very Django specific, figure out less opinionated way for non-Django users
     def get_migration_count(self, project_name: str) -> int:
         tag_name = self.get_latest_final_tag_name(project_name)
-        with self._gcmd(project_name) as gcmd:
-            return len(gcmd([
+        return len(self._execute_project_git(
+            project_name,
+            [
                 'diff', '--name-status', '--diff-filter=A',
                 f'HEAD..{tag_name}', '--', 'src/**/migrations/',
-            ]).stdout.strip().splitlines())
+            ]
+        ).stdout.strip().splitlines())
 
     @classmethod
     def _get_latest_final_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:
