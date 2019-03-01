@@ -66,7 +66,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         self.setup_repos()
         super().activate()
         self.jira = JiraClient(self.get_jira_config())
-        self.gitclient = GitClient(self.get_git_config())
+        self.git = GitClient(self.get_git_config())
 
     def setup_repos(self):
         """Clone the projects in the configuration into the `REPOS_ROOT` if they do not exist already."""
@@ -205,42 +205,42 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     @botcmd
     def seal(self, msg: Message, args) -> str:
         """Initiate the release sequence by tagging updated projects"""
-        updated_project_names = self.gitclient.get_updated_repo_names(self.get_project_names())
+        updated_project_names = self.git.get_updated_repo_names(self.get_project_names())
         card_dict = {}
         for project_name in updated_project_names:
             # TODO: wrap in a try/except and roll back repos on any kind of failure
-            latest_final = self.gitclient.get_latest_final_tag_name(project_name)
+            latest_final = self.git.get_latest_final_tag_name(project_name)
             project_key = self.get_project_key(project_name)
             new_version = self.jira.get_pending_version_name(
                 project_key,
                 helpers.Stages.SEALED,
                 latest_final,
-                self.gitclient.get_latest_pre_release_tag_name(project_name, min_version=latest_final),
+                self.git.get_latest_pre_release_tag_name(project_name, min_version=latest_final),
             )
 
             # FIXME: should wrap all commands with gcmd, rather than individually inside gitclient code
-            self.gitclient.checkout_latest(project_name, 'develop')
-            self.gitclient.get_latest_ref(project_name)
-            self.gitclient.create_tag(project_name, new_version)
-            self.gitclient.create_ref(project_name, new_version)
+            self.git.checkout_latest(project_name, 'develop')
+            self.git.get_latest_ref(project_name)
+            self.git.create_tag(project_name, new_version)
+            self.git.create_ref(project_name, new_version)
 
             card_dict[project_name] = {
                 'Key': project_key,
                 'Release Type': self.jira.get_release_type(project_key),
 
                 'Previous Version': '<{url}|{tag}>'.format(
-                    url=self.gitclient.get_latest_final_tag_url(project_name),
-                    tag=self.gitclient.get_latest_final_tag_name(project_name),
+                    url=self.git.get_latest_final_tag_url(project_name),
+                    tag=self.git.get_latest_final_tag_name(project_name),
                 ),
-                'Previous vCommit': self.gitclient.get_latest_final_tag_sha(project_name)[:7],
+                'Previous vCommit': self.git.get_latest_final_tag_sha(project_name)[:7],
 
-                'Merge Count': self.gitclient.get_merge_count(project_name),
+                'Merge Count': self.git.get_merge_count(project_name),
                 # TODO: it would be nice to be able to dynamically pass in functions for fields to show up on the card
-                'New Migrations': self.gitclient.get_migration_count(project_name),  # FIXME: too django-specific
+                'New Migrations': self.git.get_migration_count(project_name),  # FIXME: too django-specific
 
                 # To be removed for `fields`
                 'New Version Name': new_version,
-                'GitHub Tag Comparison': self.gitclient.get_latest_compare_url(project_name),
+                'GitHub Tag Comparison': self.git.get_latest_compare_url(project_name),
                 # TODO: find a good public source for thumbnails; follow license
                 'thumbnail': 'https://static.thenounproject.com/png/1662598-200.png',
             }
