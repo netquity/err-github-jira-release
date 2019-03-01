@@ -84,7 +84,7 @@ class GitClient:
         """Get the full path to the project root"""
         return os.path.join(self.repos_root, project_name)
 
-    def create_tag(self, project_name: str, tag_name: str):
+    def create_tag(self, project_name: str, tag_name: str) -> None:
         """Create a git tag on whatever commit HEAD is pointing at"""
         tag_name = f'v{tag_name}'
         self._execute_project_git(
