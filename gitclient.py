@@ -115,6 +115,16 @@ class GitClient:
             prerelease=False,
         )
 
+    def tag_develop(self, project_name: str, tag_name: str) -> None:
+        """Compound check, tag, ref creation and pushing it all to origin
+
+        :param project_name:
+        :param tag_name: the new tag to apply to develop's HEAD
+        """
+        self.checkout_latest(project_name, 'develop')
+        self.create_tag(project_name, tag_name)
+        self.create_ref(project_name, tag_name)
+
     def _get_remote_repo(self, project_name: str):
         return self.github.get_repo(project_name)
 

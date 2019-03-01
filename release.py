@@ -219,9 +219,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             )
 
             # FIXME: should wrap all commands with gcmd, rather than individually inside gitclient code
-            self.git.checkout_latest(project_name, 'develop')
-            self.git.create_tag(project_name, new_version)
-            self.git.create_ref(project_name, new_version)
+            self.git.tag_develop(project_name, new_version)
 
             card_dict[project_name] = {
                 'Key': project_key,
