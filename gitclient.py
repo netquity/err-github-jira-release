@@ -168,7 +168,7 @@ class GitClient:
         """Check out the latest version of develop for the given project"""
         with self._gcmd(project_name) as gcmd:
             for git_command in [
-                    ['fetch', '-p'],
+                    ['fetch', '-p', '--tags'],
                     ['checkout', '-B', ref, f'origin/{ref}'],
             ]:
                 gcmd(git_command)
