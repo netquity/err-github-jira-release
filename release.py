@@ -202,45 +202,52 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             color='green',
         )
 
+    def _bump_project_tags(self, project_name: str, stage: str) -> str:
+        """Tag the project's repo with the next version's tags and push to origin"""
+        latest_final = self.git.get_latest_final_tag_name(project_name)
+        project_key = self.get_project_key(project_name)
+        new_version = self.jira.get_pending_version_name(
+            project_key,
+            stage,
+            latest_final,
+            self.git.get_latest_pre_release_tag_name(project_name, min_version=latest_final),
+        )
+        self.git.tag_develop(project_name, new_version)
+        return new_version
+
+    def _get_version_card(self, project_name: str) -> Dict:
+        project_key = self.get_project_key(project_name)
+        return {
+            'Key': project_key,
+            'Release Type': self.jira.get_release_type(project_key),
+
+            'Previous Version': '<{url}|{tag}>'.format(
+                url=self.git.get_latest_final_tag_url(project_name),
+                tag=self.git.get_latest_final_tag_name(project_name),
+            ),
+            'Previous vCommit': self.git.get_latest_final_tag_sha(project_name)[:7],
+
+            'Merge Count': self.git.get_merge_count(project_name),
+            # TODO: it would be nice to be able to dynamically pass in functions for fields to show up on the card
+            'New Migrations': self.git.get_migration_count(project_name),  # FIXME: too django-specific
+
+            # To be removed for `fields`
+            'GitHub Tag Comparison': self.git.get_latest_compare_url(project_name),
+            # TODO: find a good public source for thumbnails; follow license
+            'thumbnail': 'https://static.thenounproject.com/png/1662598-200.png',
+        }
+
     @botcmd
     def seal(self, msg: Message, args) -> str:
         """Initiate the release sequence by tagging updated projects"""
-        updated_project_names = self.git.get_updated_repo_names(self.get_project_names())
         card_dict = {}
-        for project_name in updated_project_names:
+        for project_name in self.git.get_updated_repo_names(self.get_project_names()):
             # TODO: wrap in a try/except and roll back repos on any kind of failure
-            latest_final = self.git.get_latest_final_tag_name(project_name)
-            project_key = self.get_project_key(project_name)
-            new_version = self.jira.get_pending_version_name(
-                project_key,
-                helpers.Stages.SEALED,
-                latest_final,
-                self.git.get_latest_pre_release_tag_name(project_name, min_version=latest_final),
+            new_version = self._bump_project_tags(project_name, helpers.Stages.SEALED)
+            card_dict[project_name] = dict(
+                self._get_version_card(project_name),
+                **{'New Version Name': new_version}
             )
-
-            # FIXME: should wrap all commands with gcmd, rather than individually inside gitclient code
-            self.git.tag_develop(project_name, new_version)
-
-            card_dict[project_name] = {
-                'Key': project_key,
-                'Release Type': self.jira.get_release_type(project_key),
-
-                'Previous Version': '<{url}|{tag}>'.format(
-                    url=self.git.get_latest_final_tag_url(project_name),
-                    tag=self.git.get_latest_final_tag_name(project_name),
-                ),
-                'Previous vCommit': self.git.get_latest_final_tag_sha(project_name)[:7],
-
-                'Merge Count': self.git.get_merge_count(project_name),
-                # TODO: it would be nice to be able to dynamically pass in functions for fields to show up on the card
-                'New Migrations': self.git.get_migration_count(project_name),  # FIXME: too django-specific
-
-                # To be removed for `fields`
-                'New Version Name': new_version,
-                'GitHub Tag Comparison': self.git.get_latest_compare_url(project_name),
-                # TODO: find a good public source for thumbnails; follow license
-                'thumbnail': 'https://static.thenounproject.com/png/1662598-200.png',
-            }
 
         yield f"{len(card_dict)} projects updated: \n\t• " + '\n\t• '.join(list(card_dict))
 
