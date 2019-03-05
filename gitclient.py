@@ -352,6 +352,10 @@ class GitClient:
             self.get_latest_final_tag_name(project_name),
         )
 
+    def get_latest_final_tag_date(self, project_name: str) -> str:
+        """Get the latest final release's tag date"""
+        return GitClient._get_latest_final_tag(self._get_remote_repo(project_name)).commit.stats.last_modified
+
     def release_url(self, project_name: str, new_version_name: str) -> str:
         """Get the GitHub release URL"""
         return f'https://github.com/{project_name}/releases/tag/v{new_version_name}'
@@ -372,6 +376,33 @@ class GitClient:
     def _get_compare_url(cls, project_name: str, old_tag: str, new_tag: str) -> str:
         """Get the URL to compare two tags on GitHub"""
         return f'https://github.com/{project_name}/compare/{old_tag}...{new_tag}'
+
+    def get_latest_merged_prs_url(self, project_name: str) -> str:
+        """Get the URL to see merged PRs since the latest final on GitHub"""
+        start_date = GitClient._parse_github_datetime(self.get_latest_final_tag_date(project_name))
+        GitClient._get_merged_prs_url(
+            project_name,
+            start_date.isoformat(),  # TODO: timezone?
+            datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        )
+
+    @staticmethod
+    def _parse_github_datetime(dt: str) -> datetime:
+        """Take GitHub's ISO8601 datetime string and return a datetime object
+
+        >>> GitClient._parse_github_datetime('Thu, 28 Feb 2019 17:24:21 GMT')
+        datetime.datetime(2019, 2, 28, 17, 24, 21)
+        """
+        return datetime.strptime(dt, '%a, %d %b %Y %H:%M:%S %Z')
+
+    @staticmethod
+    def _get_merged_prs_url(project_name: str, start_date: str, end_date: str) -> str:
+        """Get the URL to see merged PRs in a date range on GitHub
+
+        >>> GitClient._get_merged_prs_url('foo/bar-project', '2018-01-01T22:02:39+00:00', '2018-01-02T22:02:39+00:00')
+        'https://github.com/foo/bar-project/pulls?utf8=✓&q=is:pr+is:closed+merged:2018-01-01T22:02:39+00:00..2018-01-02T22:02:39+00:00'
+        """
+        return f'https://github.com/{project_name}/pulls?utf8=✓&q=is:pr+is:closed+merged:{start_date}..{end_date}'
 
     # TODO: this is very Django specific, figure out less opinionated way for non-Django users
     def get_migration_count(self, project_name: str) -> int:

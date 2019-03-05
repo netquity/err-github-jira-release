@@ -98,6 +98,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             },
             'TEMPLATE_DIR': '/home/web/templates/',
             'changelog_path': '{}/CHANGELOG.md',
+            'UAT_CHANNEL_IDENTIFIER': '#uat',  # certain messages will be sent here instead of as a reply
         }
 
     def check_configuration(self, configuration: Mapping) -> None:
@@ -259,6 +260,50 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 project_name=name,
                 card_dict=fields,
             )
+
+    @botcmd
+    def send(self, msg: Message, args) -> str:
+        """Update SemVer metadata and tell the configured UAT channel that testing can begin
+
+        This command is called only after the `seal` command is called and the sealed version set is tested and
+        approved.
+        """
+        fields = ()
+        updated_projects = self.git.get_updated_repo_names(self.get_project_names())
+        for project_name in updated_projects:
+            try:
+                new_version = self._bump_project_tags(project_name, helpers.Stages.SENT)
+                # form a field for each project formatted like:
+                # ('net-net - v10.0.0 → v11.0.0-rc.2', '<https://best-url.com|12 PRs (major)>')
+                fields += (
+                    '{repo_name} - {latest_final} → {latest_pre}'.format(  # field title
+                        repo_name=project_name.split("/")[1],  # get rid of org name for brevity
+                        latest_final=self.git.get_latest_final_tag_name(project_name),
+                        latest_pre=new_version,
+                    ),
+                    '<{url}|{pr_count} PR(s) ({release_type})>'.format(  # field contents
+                        url=self.git.get_latest_merged_prs_url(project_name),
+                        pr_count=self.git.get_merge_count(project_name),
+                        release_type=self.jira.get_release_type(self.get_project_key(project_name)),
+                    ),
+                ),
+            except helpers.InvalidStageTransitionError:
+                failure_message = f'Invalid state transition attempted when bumping {project_name}'
+                self.log.exception(
+                    failure_message,
+                )
+                return self.send_card(
+                    in_reply_to=msg,
+                    body=failure_message,
+                    color='red',
+                )
+        self.send_card(  # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time
+            title=f'{len(update_projects)} releases',
+            to=self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER']),
+            fields=fields,
+            color='green',
+        )
+        return "I have sent your sealed version set to the UAT channel. Awaiting their approval."
 
     def _get_project_root(self, project_name: str) -> str:
         """Get the root of the project's Git repo locally."""
