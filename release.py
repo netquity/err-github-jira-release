@@ -244,6 +244,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         card_dict = {}
         for project_name in self.git.get_updated_repo_names(self.get_project_names()):
             # TODO: wrap in a try/except and roll back repos on any kind of failure
+            # TODO: these bumps can all be done asynchronously, they don't depend on each other
             new_version = self._bump_project_tags(project_name, helpers.Stages.SEALED)
             card_dict[project_name] = dict(
                 self._get_version_card(project_name),
@@ -262,7 +263,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             )
 
     @botcmd
-    def send(self, msg: Message, args) -> str:
+    def send(self, msg: Message, args) -> str:  # pylint:disable=unused-argument
         """Update SemVer metadata and tell the configured UAT channel that testing can begin
 
         This command is called only after the `seal` command is called and the sealed version set is tested and
