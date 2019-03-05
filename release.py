@@ -239,18 +239,46 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         }
 
     @botcmd
-    def seal(self, msg: Message, args) -> str:
+    def seal(self, msg: Message, args) -> Optional[str]:  # pylint:disable=unused-argument
         """Initiate the release sequence by tagging updated projects"""
         card_dict = {}
         for project_name in self.git.get_updated_repo_names(self.get_project_names()):
             # TODO: wrap in a try/except and roll back repos on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
-            new_version = self._bump_project_tags(project_name, helpers.Stages.SEALED)
-            card_dict[project_name] = dict(
-                self._get_version_card(project_name),
-                **{'New Version Name': new_version}
-            )
+            try:
+                new_version = self._bump_project_tags(project_name, helpers.Stages.SEALED)
+                card_dict[project_name] = dict(
+                    self._get_version_card(project_name),
+                    **{'New Version Name': new_version}
+                )
+            except NoJIRAIssuesFoundError as exc:
+                key = self.get_project_key(project_name)
+                failure_message = (  # TODO: consider putting this information in card fields instead
+                    'Since `{latest_final}`, {project_name} '
+                    'had {merge_count} '
+                    'but <{latest_jira_issues}|Jira> {exc_msg}.'
+                ).format(
+                    latest_final=self.git.get_latest_final_tag_name(project_name),
+                    project_name=project_name,
+                    merge_count=self._get_merge_summary(project_name),
+                    latest_jira_issues=self.jira.get_latest_issues_url(key),
+                    exc_msg=str(exc)[0].lower() + str(exc)[1:],
+                )
 
+                self.log.exception(
+                    failure_message,
+                )
+                self.send_card(
+                    in_reply_to=msg,
+                    body=failure_message,
+                    color='red',
+                )
+        if not card_dict:
+            return self.send_card(
+                in_reply_to=msg,
+                body='No projects updated.',
+                color='red',
+            )
         yield f"{len(card_dict)} projects updated: \n\t• " + '\n\t• '.join(list(card_dict))
 
         for name, fields in card_dict.items():
@@ -261,6 +289,8 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 project_name=name,
                 card_dict=fields,
             )
+
+        return f'{len(card_dict)} / {len(self.get_project_names())} projects updated since last release.'
 
     @botcmd
     def send(self, msg: Message, args) -> str:  # pylint:disable=unused-argument

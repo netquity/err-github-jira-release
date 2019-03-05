@@ -131,6 +131,19 @@ class JiraClient:
             'Could not find any closed issues without a fixVersion in project_key=%s' % project_key.upper()
         )
 
+    def get_latest_issues_url(self, project_key: str) -> str:
+        """Get the Jira issue URL showing all closed issues with a fixVersion"""
+        from urllib import parse
+        return '{jira_url}/issues/?jql={query}'.format(
+            jira_url=self.api.client_info(),
+            query=parse.quote_plus(
+                f'project = {project_key.upper()} AND status = "closed" '
+                'AND fixVersion = EMPTY '
+                'AND resolution in ("Fixed", "Done") '
+                'ORDER BY created DESC'
+            ),
+        )
+
     def get_release_url(self, project_key: str, version_id: int) -> str:
         """Get the URL of the Jira version object"""
         return '{jira_url}/projects/{project_key}/versions/{version_id}/tab/release-report-done'.format(
