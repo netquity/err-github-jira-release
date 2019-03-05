@@ -381,10 +381,10 @@ class GitClient:
     def get_latest_merged_prs_url(self, project_name: str) -> str:
         """Get the URL to see merged PRs since the latest final on GitHub"""
         start_date = GitClient._parse_github_datetime(self.get_latest_final_tag_date(project_name))
-        GitClient._get_merged_prs_url(
+        return GitClient._get_merged_prs_url(
             project_name,
             start_date.isoformat(),  # TODO: timezone?
-            datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            datetime.now(timezone.utc).replace(microsecond=0).isoformat().split('+')[0],
         )
 
     @staticmethod
