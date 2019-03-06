@@ -329,7 +329,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     color='red',
                 )
         self.send_card(  # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time
-            title=f'{len(update_projects)} releases',
+            title=str(len(updated_projects)) + ' release(s)',
             to=self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER']),
             fields=fields,
             color='green',
