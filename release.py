@@ -312,11 +312,8 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                         latest_final=self.git.get_latest_final_tag_name(project_name),
                         latest_pre=new_version,
                     ),
-                    '<{url}|{pr_count} PR(s) ({release_type})>'.format(  # field contents
-                        url=self.git.get_latest_merged_prs_url(project_name),
-                        pr_count=self.git.get_merge_count(project_name),
-                        release_type=self.jira.get_release_type(self.get_project_key(project_name)),
-                    ),
+                    self._get_merge_summary(project_name)
+                    + f'({self.jira.get_release_type(self.get_project_key(project_name))})',
                 ),
             except helpers.InvalidStageTransitionError:
                 failure_message = f'Invalid state transition attempted when bumping {project_name}'
@@ -335,6 +332,13 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             color='green',
         )
         return "I have sent your sealed version set to the UAT channel. Awaiting their approval."
+
+    def _get_merge_summary(self, project_name: str) -> str:
+        """Return a link to GitHub's issue search showing the merged PRs """
+        return '<{url}|{pr_count} merged PR(s)>'.format(
+            url=self.git.get_latest_merged_prs_url(project_name),
+            pr_count=self.git.get_merge_count(project_name),
+        )
 
     def _get_project_root(self, project_name: str) -> str:
         """Get the root of the project's Git repo locally."""
