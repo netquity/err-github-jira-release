@@ -4,6 +4,8 @@ import subprocess
 import logging
 from enum import Enum
 
+from errbot import ValidationException
+
 logger = logging.getLogger(__file__)
 
 
@@ -28,7 +30,7 @@ class Stages(Enum):
 S = Stages  # Shortcuts  pylint:disable=invalid-name
 
 
-class InvalidStageTransitionError(Exception):
+class InvalidStageTransitionError(ValidationException):
     """An invalid stage (seal, sign, send) transition"""
 
 
