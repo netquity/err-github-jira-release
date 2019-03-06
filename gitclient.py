@@ -34,7 +34,8 @@ def _execute_path_git(project_root: str, git_command: list) -> subprocess.Comple
         )
     except subprocess.CalledProcessError:
         logger.exception(
-            'Failed git command=%s, output=%s',
+            '%s: Failed git command=%s, output=%s',
+            project_root,
             git_command,
             sys.exc_info()[1].stdout,
         )
