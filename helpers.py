@@ -71,7 +71,7 @@ def bump_version(release_type: str, stage: str, final_version: str, pre_version:
     :param stage: the release stage to transition into (seal, send, sign)
     :param final_version: the latest final version name; the version to be upgraded (eg. 1.0.0)
     :param pre_version: the version containing information about the current release cycle:
-                        pre-release version, rc count, stage (eg. 1.0.1-rc.5+sealed
+                        pre-release version, rc count, stage (eg. 1.0.1-rc.5+sealed)
                         it's possible that such a version does not yet exist, as when initiating the release sequence
                         for the first time
     :return: the new version string
