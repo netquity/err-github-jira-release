@@ -10,7 +10,7 @@ from errbot import BotPlugin, botcmd, arg_botcmd, ValidationException
 from errbot.botplugin import recurse_check_structure
 from errbot.backends.base import Message
 from gitclient import GitClient
-from jiraclient import JiraClient
+from jiraclient import JiraClient, NoJIRAIssuesFoundError
 
 import helpers
 
@@ -255,12 +255,12 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 key = self.get_project_key(project_name)
                 failure_message = (  # TODO: consider putting this information in card fields instead
                     'Since `{latest_final}`, {project_name} '
-                    'had {merge_count} '
+                    'had {merge_summary} '
                     'but <{latest_jira_issues}|Jira> {exc_msg}.'
                 ).format(
                     latest_final=self.git.get_latest_final_tag_name(project_name),
                     project_name=project_name,
-                    merge_count=self._get_merge_summary(project_name),
+                    merge_summary=self._get_merge_summary(project_name),
                     latest_jira_issues=self.jira.get_latest_issues_url(key),
                     exc_msg=str(exc)[0].lower() + str(exc)[1:],
                 )
