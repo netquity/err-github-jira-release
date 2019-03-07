@@ -73,8 +73,8 @@ class JiraClient:
         return bump_version(
             release_type=self.get_release_type(project_key),
             stage=stage.verb,
-            final_version=final_version[1:],  # dropping the leading `v`
-            pre_version=pre_version,
+            final_version=final_version[1:],  # dropping the leading `v`  TODO: do it better
+            pre_version=pre_version[1:] if pre_version else None,
         )
 
     def get_release_notes(self, version: resources.Version) -> str:
