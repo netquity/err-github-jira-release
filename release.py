@@ -379,7 +379,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         """
         return self.send_card(  # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time
             title=f'{project_name} - {card_dict.pop("New Version Name")}',
-            link=card_dict.pop('GitHub Release URL'),
+            link=card_dict.pop('GitHub Tag Comparison'),
             in_reply_to=message,  # TODO: sometimes the message should be sent to a different channel
             thumbnail=card_dict.pop('thumbnail'),
             fields=tuple(card_dict.items()),
