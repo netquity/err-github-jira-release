@@ -4,7 +4,7 @@ import errno
 import logging
 import os
 
-from typing import List, Tuple, Mapping, Dict, Union
+from typing import List, Mapping, Dict, Union, Optional
 
 from errbot import BotPlugin, botcmd, arg_botcmd, ValidationException
 from errbot.botplugin import recurse_check_structure
