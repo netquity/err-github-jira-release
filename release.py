@@ -313,7 +313,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                         latest_pre=new_version,
                     ),
                     self._get_merge_summary(project_name)
-                    + f'({self.jira.get_release_type(self.get_project_key(project_name))})',
+                    + f' ({self.jira.get_release_type(self.get_project_key(project_name))})',
                 ),
             except helpers.InvalidStageTransitionError:
                 failure_message = f'Invalid state transition attempted when bumping {project_name}'
