@@ -78,6 +78,7 @@ class GitClient:
         return self._execute_project_git(self._get_project_root(project_name), ['clean', '-f'])
 
     def reset_hard(self, project_name: str, ref: str) -> CompletedProcess:
+        """Do a hard reset on a repo to a target ref"""
         return self._execute_project_git(self._get_project_root(project_name), ['reset', '--hard', ref])
 
     def create_tag(self, project_name: str, tag_name: str) -> None:
