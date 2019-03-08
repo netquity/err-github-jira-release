@@ -236,13 +236,6 @@ class GitClient:
 
         return self.get_rev_hash(project_name, 'develop')
 
-    def get_all_repos(self, project_names: List[str]) -> List[Repository]:
-        """Get a list of all the repositories under management
-
-        http://developer.github.com/v3/repos/
-        """
-        return [self._get_remote_repo(project_name) for project_name in project_names]
-
     def get_updated_repo_names(self, project_names: List[str]) -> List[str]:
         """Get a list of the full names of the repos that have commits to develop since last final release"""
         return [project.full_name for project in self._get_updated_repos(project_names)]
@@ -310,6 +303,13 @@ class GitClient:
             ),
         )
 
+    def _get_all_repos(self, project_names: List[str]) -> List[Repository]:
+        """Get a list of all the repositories under management
+
+        http://developer.github.com/v3/repos/
+        """
+        return [self._get_remote_repo(project_name) for project_name in project_names]
+
     def _get_remote_repo(self, project_name: str):
         return self.github.get_repo(project_name)
 
@@ -323,7 +323,7 @@ class GitClient:
     def _get_updated_repos(self, project_names: List[str]) -> List[Repository]:
         """Get a list of repos that have commits to develop since the last final release"""
         return [
-            repo for repo in self.get_all_repos(project_names)
+            repo for repo in self._get_all_repos(project_names)
             if self._is_updated_since_last_final(repo)
         ]
 
