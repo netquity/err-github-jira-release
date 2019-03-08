@@ -303,42 +303,6 @@ class GitClient:
             return latest_pre_tag
         return None
 
-    @staticmethod
-    def _is_older_version(old_version: str, new_version: str) -> bool:
-        """Compare two version strings to determine if one is newer than the other
-
-        :param old_version: version string expected to be sorted before the new_version
-        :param new_version: version string expected to be sorted after the old_string
-        :return: True if expectations are correct and False otherwise
-        >>> GitClient._is_older_version('v1.0.0', 'v2.0.0')
-        True
-        >>> GitClient._is_older_version('v1.0.0', 'v1.0.0')
-        False
-        >>> GitClient._is_older_version('v1.0.0', 'v1.0.0-rc.1')
-        False
-        >>> GitClient._is_older_version('v1.0.0', 'v1.0.1-rc.1+sealed')
-        True
-        >>> GitClient._is_older_version('1.0.0', '2.0.0')  # need to include the leading `v`
-        Traceback (most recent call last):
-            ...
-        ValueError: .0.0 is not valid SemVer string
-        """
-        from semver import match
-        return match(old_version[1:], f"<{new_version[1:]}")
-
-    @classmethod
-    def _get_latest_pre_release_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:
-        """Get the latest pre-release tag
-
-        Tags are identified as pre-release tags if they contain a pre-release segment such as the following, where the
-        hyphen-separated component (`rc.1`) makes up the pre-release segment:
-        v1.0.0-rc.1
-        v1.0.0-rc.1+sealed
-
-        However, the presence of a SemVer metadata segment has no bearing on whether it's a pre-release tag or not.
-        """
-        return cls._find_tag(origin, cls._is_prerelease_tag_name)
-
     def get_latest_final_tag_name(self, project_name: str) -> str:
         """Get the latest final release's tag name"""
         return GitClient._get_latest_final_tag(self._get_remote_repo(project_name)).name
@@ -374,11 +338,6 @@ class GitClient:
             )
         )
 
-    @staticmethod
-    def _get_compare_url(project_name: str, old_tag: str, new_tag: str) -> str:
-        """Get the URL to compare two tags on GitHub"""
-        return f'https://github.com/{project_name}/compare/{old_tag}...{new_tag}'
-
     def get_latest_merged_prs_url(self, project_name: str) -> str:
         """Get the URL to see merged PRs since the latest final on GitHub"""
         start_date = GitClient._parse_github_datetime(self.get_latest_final_tag_date(project_name))
@@ -387,6 +346,76 @@ class GitClient:
             start_date.isoformat(),  # TODO: timezone?
             datetime.now(timezone.utc).replace(microsecond=0).isoformat().split('+')[0],
         )
+
+    # TODO: this is very Django specific, figure out less opinionated way for non-Django users
+    def get_migration_count(self, project_name: str) -> int:
+        tag_name = self.get_latest_final_tag_name(project_name)
+        return len(self._execute_project_git(
+            project_name,
+            [
+                'diff', '--name-status', '--diff-filter=A',
+                f'HEAD..{tag_name}', '--', 'src/**/migrations/',
+            ]
+        ).stdout.strip().splitlines())
+
+    @classmethod
+    def _get_latest_pre_release_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:
+        """Get the latest pre-release tag
+
+        Tags are identified as pre-release tags if they contain a pre-release segment such as the following, where the
+        hyphen-separated component (`rc.1`) makes up the pre-release segment:
+        v1.0.0-rc.1
+        v1.0.0-rc.1+sealed
+
+        However, the presence of a SemVer metadata segment has no bearing on whether it's a pre-release tag or not.
+        """
+        return cls._find_tag(origin, cls._is_prerelease_tag_name)
+
+    @classmethod
+    def _get_latest_final_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:
+        """Get the latest final tag
+
+        Final tags do not contain a pre-release segment, but may contain a SemVer metadata segment.
+        """
+        return cls._find_tag(origin, lambda tag: not cls._is_prerelease_tag_name(tag))
+
+    @classmethod
+    def _find_tag(cls, origin: Repository, test: Callable[[str], bool]) -> Union['github.Tag.tag', None]:
+        """Return the first tag that passes a given test or `None` if none found"""
+        return next((tag for tag in cls._get_tags(origin) if test(tag.name)), None)
+
+    @staticmethod
+    def _get_tags(origin: Repository) -> PaginatedList.PaginatedList:
+        """Get all the tags for the repo"""
+        return origin.get_tags()  # TODO: consider searching local repo instead of GitHub
+
+    @staticmethod
+    def _is_older_version(old_version: str, new_version: str) -> bool:
+        """Compare two version strings to determine if one is newer than the other
+
+        :param old_version: version string expected to be sorted before the new_version
+        :param new_version: version string expected to be sorted after the old_string
+        :return: True if expectations are correct and False otherwise
+        >>> GitClient._is_older_version('v1.0.0', 'v2.0.0')
+        True
+        >>> GitClient._is_older_version('v1.0.0', 'v1.0.0')
+        False
+        >>> GitClient._is_older_version('v1.0.0', 'v1.0.0-rc.1')
+        False
+        >>> GitClient._is_older_version('v1.0.0', 'v1.0.1-rc.1+sealed')
+        True
+        >>> GitClient._is_older_version('1.0.0', '2.0.0')  # need to include the leading `v`
+        Traceback (most recent call last):
+            ...
+        ValueError: .0.0 is not valid SemVer string
+        """
+        from semver import match
+        return match(old_version[1:], f"<{new_version[1:]}")
+
+    @staticmethod
+    def _get_compare_url(project_name: str, old_tag: str, new_tag: str) -> str:
+        """Get the URL to compare two tags on GitHub"""
+        return f'https://github.com/{project_name}/compare/{old_tag}...{new_tag}'
 
     @staticmethod
     def _parse_github_datetime(dt: str) -> datetime:
@@ -405,30 +434,6 @@ class GitClient:
         'https://github.com/foo/bar-project/pulls?utf8=✓&q=is:pr+is:closed+merged:2018-01-01T22:02:39+00:00..2018-01-02T22:02:39+00:00'
         """
         return f'https://github.com/{project_name}/pulls?utf8=✓&q=is:pr+is:closed+merged:{start_date}..{end_date}'
-
-    # TODO: this is very Django specific, figure out less opinionated way for non-Django users
-    def get_migration_count(self, project_name: str) -> int:
-        tag_name = self.get_latest_final_tag_name(project_name)
-        return len(self._execute_project_git(
-            project_name,
-            [
-                'diff', '--name-status', '--diff-filter=A',
-                f'HEAD..{tag_name}', '--', 'src/**/migrations/',
-            ]
-        ).stdout.strip().splitlines())
-
-    @classmethod
-    def _get_latest_final_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:
-        """Get the latest final tag
-
-        Final tags do not contain a pre-release segment, but may contain a SemVer metadata segment.
-        """
-        return cls._find_tag(origin, lambda tag: not cls._is_prerelease_tag_name(tag))
-
-    @classmethod
-    def _find_tag(cls, origin: Repository, test: Callable[[str], bool]) -> Union['github.Tag.tag', None]:
-        """Return the first tag that passes a given test or `None` if none found"""
-        return next((tag for tag in cls._get_tags(origin) if test(tag.name)), None)
 
     @staticmethod
     def _is_prerelease_tag_name(tag_name: str) -> bool:
@@ -454,7 +459,3 @@ class GitClient:
             )
             raise exc
 
-    @staticmethod
-    def _get_tags(origin: Repository) -> PaginatedList.PaginatedList:
-        """Get all the tags for the repo"""
-        return origin.get_tags()  # TODO: consider searching local repo instead of GitHub
