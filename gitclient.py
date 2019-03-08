@@ -49,6 +49,10 @@ class GitClient:
     class TagData:
         """A simple wrapper around `github.Tag.Tag` to provide just the details we need"""
         def __init__(self, project_name: str, tag: Tag):
+            if not isinstance(tag, Tag):
+                raise ValueError(
+                    f'Inappropriate type: `tag` argument must be of type `github.Tag.Tag` but got `{type(tag)}`'
+                )
             self._project_name = project_name
             self._tag = tag
 
