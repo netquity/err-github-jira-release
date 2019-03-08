@@ -78,14 +78,6 @@ class GitClient:
     def reset_hard(self, project_name: str, ref: str) -> subprocess.CompletedProcess:
         return self._execute_project_git(self._get_project_root(project_name), ['reset', '--hard', ref])
 
-    def _execute_project_git(self, project_name: str, git_command: list) -> subprocess.CompletedProcess:
-        """Simple wrapper for executing git commands by project name"""
-        return _execute_path_git(self._get_project_root(project_name), git_command)
-
-    def _get_project_root(self, project_name: str) -> str:
-        """Get the full path to the project root"""
-        return os.path.join(self.repos_root, project_name)
-
     def create_tag(self, project_name: str, tag_name: str) -> None:
         """Create a git tag on whatever commit HEAD is pointing at"""
         tag_name = f'v{tag_name}'
@@ -126,9 +118,6 @@ class GitClient:
         self.checkout_latest(project_name, 'develop')
         self.create_tag(project_name, tag_name)
         self.create_ref(project_name, tag_name)
-
-    def _get_remote_repo(self, project_name: str):
-        return self.github.get_repo(project_name)
 
     def get_rev_hash(self, project_name: str, ref: str) -> str:
         """Get the SHA1 hash of a particular git ref"""
@@ -220,23 +209,9 @@ class GitClient:
         """
         return [self._get_remote_repo(project_name) for project_name in project_names]
 
-    def _is_updated_since_last_final(self, repo: Repository) -> bool:
-        """Check if the given repo has commits to develop since the last final release"""
-        return self._get_merge_count_since(
-            repo.full_name,
-            GitClient._get_latest_final_tag(repo).name
-        ) > 0
-
     def get_updated_repo_names(self, project_names: List[str]) -> List[str]:
         """Get a list of the full names of the repos that have commits to develop since last final release"""
         return [project.full_name for project in self._get_updated_repos(project_names)]
-
-    def _get_updated_repos(self, project_names: List[str]) -> List[Repository]:
-        """Get a list of repos that have commits to develop since the last final release"""
-        return [
-            repo for repo in self.get_all_repos(project_names)
-            if self._is_updated_since_last_final(repo)
-        ]
 
     def get_merge_count(self, project_name: str) -> int:
         """Get the number of merges to develop since the last final tag"""
@@ -245,49 +220,6 @@ class GitClient:
             self._get_latest_final_tag(
                 self._get_remote_repo(project_name),
             ).name,
-        )
-
-    def _get_merge_count_since(self, project_name: str, tag_name: str) -> int:
-        """Get the number of merges to develop since the given tag"""
-        # FIXME: assumes master and developed have not diverged, which is not a safe assumption at all
-        return len(self._execute_project_git(
-            project_name,
-            ['log', f'{tag_name}...origin/develop', '--merges', '--oneline', ]
-        ).stdout.splitlines()) - 1  # The first result will be the merge commit from last release
-
-    def _backup_repo(self, project_name: str) -> str:
-        """Create a backup of the entire local repo folder and return the destination
-
-        :return: the dst path
-        """
-        ref = self.get_latest_ref(project_name)[:7]
-        return helpers.copytree(
-            self._get_project_root(project_name),
-            self._get_backups_path(project_name),
-            ref,
-        )
-
-    def _restore_repo(self, project_name: str, backup_path: str) -> str:
-        """Restore a repo backup directory to its original location
-
-        :param backup_path: absolute path to the backup's root as returned by `_backup_repo()`
-        """
-        # create a backup of the backup so it can be moved using the atomic `shutil.move`
-        backup_swap = helpers.copytree(
-            src=backup_path,
-            dst_parent=self._get_backups_path(project_name),
-            dst=self.get_latest_ref(project_name)[:7] + '.swap',
-        )
-        # move the backup to the normal repo location
-        project_root = self._get_project_root(project_name)
-        shutil.rmtree(project_root)
-        return shutil.move(src=backup_swap, dst=project_root)
-
-    def _get_backups_path(self, project_name: str = None) -> str:
-        """Get the backups dir path, either for all projects, or for the given project name"""
-        return os.path.join(
-            *[self.repos_root, '.backups']
-            + ([project_name] if project_name else [])
         )
 
     def get_latest_pre_release_tag_name(self, project_name: str, min_version: str = None) -> Union[str, None]:
@@ -353,6 +285,75 @@ class GitClient:
                 f'HEAD..{tag_name}', '--', 'src/**/migrations/',
             ]
         ).stdout.strip().splitlines())
+
+    def _get_remote_repo(self, project_name: str):
+        return self.github.get_repo(project_name)
+
+    def _is_updated_since_last_final(self, repo: Repository) -> bool:
+        """Check if the given repo has commits to develop since the last final release"""
+        return self._get_merge_count_since(
+            repo.full_name,
+            GitClient._get_latest_final_tag(repo).name
+        ) > 0
+
+    def _get_updated_repos(self, project_names: List[str]) -> List[Repository]:
+        """Get a list of repos that have commits to develop since the last final release"""
+        return [
+            repo for repo in self.get_all_repos(project_names)
+            if self._is_updated_since_last_final(repo)
+        ]
+
+    def _get_merge_count_since(self, project_name: str, tag_name: str) -> int:
+        """Get the number of merges to develop since the given tag"""
+        # FIXME: assumes master and developed have not diverged, which is not a safe assumption at all
+        return len(self._execute_project_git(
+            project_name,
+            ['log', f'{tag_name}...origin/develop', '--merges', '--oneline', ]
+        ).stdout.splitlines()) - 1  # The first result will be the merge commit from last release
+
+    def _backup_repo(self, project_name: str) -> str:
+        """Create a backup of the entire local repo folder and return the destination
+
+        :return: the dst path
+        """
+        # TODO: maybe it would be better to back up the whole repos root, instead of individual repos
+        ref = self.get_latest_ref(project_name)[:7]
+        return helpers.copytree(
+            self._get_project_root(project_name),
+            self._get_backups_path(project_name),
+            ref,
+        )
+
+    def _restore_repo(self, project_name: str, backup_path: str) -> str:
+        """Restore a repo backup directory to its original location
+
+        :param backup_path: absolute path to the backup's root as returned by `_backup_repo()`
+        """
+        # create a backup of the backup so it can be moved using the atomic `shutil.move`
+        backup_swap = helpers.copytree(
+            src=backup_path,
+            dst_parent=self._get_backups_path(project_name),
+            dst=self.get_latest_ref(project_name)[:7] + '.swap',
+        )
+        # move the backup to the normal repo location
+        project_root = self._get_project_root(project_name)
+        shutil.rmtree(project_root)
+        return shutil.move(src=backup_swap, dst=project_root)
+
+    def _get_backups_path(self, project_name: str = None) -> str:
+        """Get the backups dir path, either for all projects, or for the given project name"""
+        return os.path.join(
+            *[self.repos_root, '.backups']
+            + ([project_name] if project_name else [])
+        )
+
+    def _execute_project_git(self, project_name: str, git_command: list) -> subprocess.CompletedProcess:
+        """Simple wrapper for executing git commands by project name"""
+        return _execute_path_git(self._get_project_root(project_name), git_command)
+
+    def _get_project_root(self, project_name: str) -> str:
+        """Get the full path to the project root"""
+        return os.path.join(self.repos_root, project_name)
 
     @classmethod
     def _get_latest_pre_release_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:
