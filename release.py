@@ -204,7 +204,10 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         )
 
     def _bump_project_tags(self, project_name: str, stage: str) -> str:
-        """Tag the project's repo with the next version's tags and push to origin"""
+        """Tag the project's repo with the next version's tags and push to origin
+
+        :param stage: the release stage to transition into (seal, send, sign)
+        """
         latest_final = self.git.get_latest_final_tag_name(project_name)
         project_key = self.get_project_key(project_name)
         new_version = self.jira.get_pending_version_name(

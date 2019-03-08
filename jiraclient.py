@@ -66,9 +66,12 @@ class JiraClient:
             project_key: str,
             stage: Stages,
             final_version: str,
-            pre_version: str = None
+            pre_version: str = None,
     ) -> str:
-        """Get a project's next version number, including merged, but yet unreleased, tickets"""
+        """Get a project's next version number, including merged, but yet unreleased, tickets
+
+        :param stage: the release stage to transition into (seal, send, sign)
+        """
         from helpers import bump_version
         return bump_version(
             release_type=self.get_release_type(project_key),
