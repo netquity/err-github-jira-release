@@ -11,10 +11,12 @@ import sys
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-from typing import Union, Callable, List, Generator
+from typing import Callable, List, Generator, Optional
 
-from github import Github, PaginatedList
+from github import Github
 from github.Repository import Repository
+from github.Tag import Tag
+from github.PaginatedList import PaginatedList
 
 import helpers
 
@@ -222,7 +224,7 @@ class GitClient:
             ).name,
         )
 
-    def get_latest_pre_release_tag_name(self, project_name: str, min_version: str = None) -> Union[str, None]:
+    def get_latest_pre_release_tag_name(self, project_name: str, min_version: str = None) -> Optional[str]:
         """Get the latest pre-release tag name
 
         :param min_version: if included, will ignore all versions below this one
@@ -356,7 +358,7 @@ class GitClient:
         return os.path.join(self.repos_root, project_name)
 
     @classmethod
-    def _get_latest_pre_release_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:
+    def _get_latest_pre_release_tag(cls, origin: Repository) -> Optional[Tag]:
         """Get the latest pre-release tag
 
         Tags are identified as pre-release tags if they contain a pre-release segment such as the following, where the
@@ -369,7 +371,7 @@ class GitClient:
         return cls._find_tag(origin, cls._is_prerelease_tag_name)
 
     @classmethod
-    def _get_latest_final_tag(cls, origin: Repository) -> Union['github.Tag.tag', None]:
+    def _get_latest_final_tag(cls, origin: Repository) -> Optional[Tag]:
         """Get the latest final tag
 
         Final tags do not contain a pre-release segment, but may contain a SemVer metadata segment.
@@ -377,13 +379,16 @@ class GitClient:
         return cls._find_tag(origin, lambda tag: not cls._is_prerelease_tag_name(tag))
 
     @classmethod
-    def _find_tag(cls, origin: Repository, test: Callable[[str], bool]) -> Union['github.Tag.tag', None]:
+    def _find_tag(cls, origin: Repository, test: Callable[[str], bool]) -> Optional[Tag]:
         """Return the first tag that passes a given test or `None` if none found"""
         return next((tag for tag in cls._get_tags(origin) if test(tag.name)), None)
 
     @staticmethod
-    def _get_tags(origin: Repository) -> PaginatedList.PaginatedList:
-        """Get all the tags for the repo"""
+    def _get_tags(origin: Repository) -> PaginatedList:
+        """Get all the tags for the repo
+
+        :return: `github.PaginatedList.PaginatedList` of `github.Tag.Tag`
+        """
         return origin.get_tags()  # TODO: consider searching local repo instead of GitHub
 
     @staticmethod

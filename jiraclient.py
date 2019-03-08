@@ -14,7 +14,8 @@ logger = logging.getLogger(__file__)
 
 
 try:
-    from jira import JIRA, JIRAError, resources
+    from jira import JIRA, JIRAError
+    from jira.resources import Version
 except ImportError:
     logger.error("Please install 'jira' and 'pygithub' Python packages")
 
@@ -48,7 +49,7 @@ class JiraClient:
         """Get the Jira project name for the given project key"""
         return self.api.project(project_key.upper()).name
 
-    def get_latest_version(self, project_key: str) -> resources.Version:
+    def get_latest_version(self, project_key: str) -> Version:
         """Get the latest version resource from JIRA.
 
         Assumes all existing versions are released and ordered by descending date."""
@@ -80,7 +81,7 @@ class JiraClient:
             pre_version=pre_version[1:] if pre_version else None,
         )
 
-    def get_release_notes(self, version: resources.Version) -> str:
+    def get_release_notes(self, version: Version) -> str:
         """Produce release notes for a JIRA project version."""
         template = Environment(
             loader=FileSystemLoader(self.template_dir),
@@ -177,7 +178,7 @@ class JiraClient:
 
             self.api.transition_issue(issue, 'Close Issue')
 
-    def create_version(self, project_key: str, new_version: str) -> resources.Version:
+    def create_version(self, project_key: str, new_version: str) -> Version:
         """Create a Jira version, applying the appropriate version bump"""
         return self.api.create_version(
             new_version,
@@ -187,7 +188,7 @@ class JiraClient:
         )
 
     @staticmethod
-    def delete_version(project_key: str, version: resources.Version, failed_command: str = 'JIRA'):
+    def delete_version(project_key: str, version: Version, failed_command: str = 'JIRA'):
         """Delete a JIRA version.
 
         Used to undo created versions when subsequent operations fail."""
