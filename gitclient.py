@@ -6,10 +6,10 @@ respective GitHub remotes.
 import logging
 import os
 import shutil
-import subprocess
 import sys
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from subprocess import CompletedProcess, CalledProcessError
 
 from typing import Callable, List, Generator, Optional
 
@@ -27,14 +27,14 @@ class GitCommandError(Exception):
     """A git command has failed"""
 
 
-def _execute_path_git(project_root: str, git_command: list) -> subprocess.CompletedProcess:
+def _execute_path_git(project_root: str, git_command: list) -> CompletedProcess:
     """Execute a git command in a specific directory"""
     try:
         return helpers.run_subprocess(
             ['git'] + git_command,
             cwd=project_root,
         )
-    except subprocess.CalledProcessError:
+    except CalledProcessError:
         logger.exception(
             '%s: Failed git command=%s, output=%s',
             project_root,
@@ -52,7 +52,7 @@ class GitClient:
         self.github = Github(config['GITHUB_TOKEN'])
 
     @contextmanager
-    def _gcmd(self, project_name: str) -> Generator[subprocess.CompletedProcess, None, None]:
+    def _gcmd(self, project_name: str) -> Generator[CompletedProcess, None, None]:
         """A context manager for interacting with local git repos in a safer way
 
         Records reflog position before doing anything and resets to this position if any of the git commands fail.
@@ -73,11 +73,11 @@ class GitClient:
             ['reflog', 'show', '--format=%H', '-1']
         ).stdout.splitlines()[0]
 
-    def clean(self, project_name: str) -> subprocess.CompletedProcess:
+    def clean(self, project_name: str) -> CompletedProcess:
         """Recursively remove files that aren't under source control"""
         return self._execute_project_git(self._get_project_root(project_name), ['clean', '-f'])
 
-    def reset_hard(self, project_name: str, ref: str) -> subprocess.CompletedProcess:
+    def reset_hard(self, project_name: str, ref: str) -> CompletedProcess:
         return self._execute_project_git(self._get_project_root(project_name), ['reset', '--hard', ref])
 
     def create_tag(self, project_name: str, tag_name: str) -> None:
@@ -349,7 +349,7 @@ class GitClient:
             + ([project_name] if project_name else [])
         )
 
-    def _execute_project_git(self, project_name: str, git_command: list) -> subprocess.CompletedProcess:
+    def _execute_project_git(self, project_name: str, git_command: list) -> CompletedProcess:
         """Simple wrapper for executing git commands by project name"""
         return _execute_path_git(self._get_project_root(project_name), git_command)
 
