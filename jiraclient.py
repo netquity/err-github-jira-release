@@ -183,8 +183,8 @@ class JiraClient:
             releaseDate=datetime.datetime.now().date().isoformat(),
         )
 
-    @classmethod
-    def delete_version(cls, project_key: str, version: resources.Version, failed_command: str = 'JIRA'):
+    @staticmethod
+    def delete_version(project_key: str, version: resources.Version, failed_command: str = 'JIRA'):
         """Delete a JIRA version.
 
         Used to undo created versions when subsequent operations fail."""
@@ -204,8 +204,8 @@ class JiraClient:
             project_key.upper(),
         )
 
-    @classmethod
-    def get_issue_search_string(cls, project_key: str) -> str:
+    @staticmethod
+    def get_issue_search_string(project_key: str) -> str:
         """Search for issues in transition since the last release"""
         # TODO: maybe we should search by some other field that unites all projects in the stack
         return 'project = %s ' % project_key.upper() + (

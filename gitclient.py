@@ -303,8 +303,8 @@ class GitClient:
             return latest_pre_tag
         return None
 
-    @classmethod
-    def _is_older_version(cls, old_version: str, new_version: str) -> bool:
+    @staticmethod
+    def _is_older_version(old_version: str, new_version: str) -> bool:
         """Compare two version strings to determine if one is newer than the other
 
         :param old_version: version string expected to be sorted before the new_version
@@ -374,8 +374,8 @@ class GitClient:
             )
         )
 
-    @classmethod
-    def _get_compare_url(cls, project_name: str, old_tag: str, new_tag: str) -> str:
+    @staticmethod
+    def _get_compare_url(project_name: str, old_tag: str, new_tag: str) -> str:
         """Get the URL to compare two tags on GitHub"""
         return f'https://github.com/{project_name}/compare/{old_tag}...{new_tag}'
 
@@ -430,8 +430,8 @@ class GitClient:
         """Return the first tag that passes a given test or `None` if none found"""
         return next((tag for tag in cls._get_tags(origin) if test(tag.name)), None)
 
-    @classmethod
-    def _is_prerelease_tag_name(cls, tag_name: str) -> bool:
+    @staticmethod
+    def _is_prerelease_tag_name(tag_name: str) -> bool:
         """Determine whether the given tag string is a pre-release tag string
 
         >>> GitClient._is_prerelease_tag_name('v1.0.0')
@@ -454,7 +454,7 @@ class GitClient:
             )
             raise exc
 
-    @classmethod
-    def _get_tags(cls, origin: Repository) -> PaginatedList.PaginatedList:
+    @staticmethod
+    def _get_tags(origin: Repository) -> PaginatedList.PaginatedList:
         """Get all the tags for the repo"""
         return origin.get_tags()  # TODO: consider searching local repo instead of GitHub
