@@ -313,7 +313,7 @@ class GitClient:
 
     def get_latest_final_tag_url(self, project_name: str) -> str:
         """Get the latest final release's tag GitHub URL"""
-        return self.release_url(
+        return GitClient.release_url(
             project_name,
             self.get_latest_final_tag_name(project_name),
         )
@@ -321,10 +321,6 @@ class GitClient:
     def get_latest_final_tag_date(self, project_name: str) -> str:
         """Get the latest final release's tag date"""
         return GitClient._get_latest_final_tag(self._get_remote_repo(project_name)).commit.stats.last_modified
-
-    def release_url(self, project_name: str, new_version_name: str) -> str:
-        """Get the GitHub release URL"""
-        return f'https://github.com/{project_name}/releases/tag/v{new_version_name}'
 
     def get_latest_compare_url(self, project_name: str) -> str:
         """Get the URL to compare the latest final with the latest pre-release on GitHub"""
@@ -459,3 +455,7 @@ class GitClient:
             )
             raise exc
 
+    @staticmethod
+    def release_url(project_name: str, new_version_name: str) -> str:
+        """Get the GitHub release URL"""
+        return f'https://github.com/{project_name}/releases/tag/v{new_version_name}'
