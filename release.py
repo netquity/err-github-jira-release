@@ -63,27 +63,10 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             self.warn_admins(message)
             return
 
-        self.setup_repos()
+        self._setup_repos()
         super().activate()
-        self.jira = JiraClient(self.get_jira_config())
-        self.git = GitClient(self.get_git_config())
-
-    def setup_repos(self):
-        """Clone the projects in the configuration into the `REPOS_ROOT` if they do not exist already."""
-        try:
-            os.makedirs(self.config['REPOS_ROOT'])
-        except OSError as exc:
-            # If the error is that the directory already exists, we don't care about it
-            if exc.errno != errno.EEXIST:
-                raise exc
-
-        for project_name in self.config['projects']:
-            if not os.path.exists(os.path.join(self.config['REPOS_ROOT'], project_name)):
-                # Possible race condition if folder somehow gets created between check and creation
-                helpers.run_subprocess(
-                    ['git', 'clone', f"git@github.com:{project_name}.git", project_name],
-                    cwd=self.config['REPOS_ROOT'],
-                )
+        self.jira = JiraClient(self._get_jira_config())
+        self.git = GitClient(self._get_git_config())
 
     def get_configuration_template(self) -> str:
         return {
@@ -203,49 +186,11 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             color='green',
         )
 
-    def _bump_project_tags(self, project_name: str, stage: str) -> str:
-        """Tag the project's repo with the next version's tags and push to origin
-
-        :param stage: the release stage to transition into (seal, send, sign)
-        """
-        latest_final = self.git.get_latest_final_tag_name(project_name)
-        project_key = self.get_project_key(project_name)
-        new_version = self.jira.get_pending_version_name(
-            project_key,
-            stage,
-            latest_final,
-            self.git.get_latest_pre_release_tag_name(project_name, min_version=latest_final),
-        )
-        self.git.tag_develop(project_name, new_version)
-        return new_version
-
-    def _get_version_card(self, project_name: str) -> Dict:
-        project_key = self.get_project_key(project_name)
-        return {
-            'Key': project_key,
-            'Release Type': self.jira.get_release_type(project_key),
-
-            'Previous Version': '<{url}|{tag}>'.format(
-                url=self.git.get_latest_final_tag_url(project_name),
-                tag=self.git.get_latest_final_tag_name(project_name),
-            ),
-            'Previous vCommit': self.git.get_latest_final_tag_sha(project_name)[:7],
-
-            'Merge Count': self.git.get_merge_count(project_name),
-            # TODO: it would be nice to be able to dynamically pass in functions for fields to show up on the card
-            'New Migrations': self.git.get_migration_count(project_name),  # FIXME: too django-specific
-
-            # To be removed for `fields`
-            'GitHub Tag Comparison': self.git.get_latest_compare_url(project_name),
-            # TODO: find a good public source for thumbnails; follow license
-            'thumbnail': 'https://static.thenounproject.com/png/1662598-200.png',
-        }
-
     @botcmd
     def seal(self, msg: Message, args) -> Optional[str]:  # pylint:disable=unused-argument
         """Initiate the release sequence by tagging updated projects"""
         card_dict = {}
-        for project_name in self.git.get_updated_repo_names(self.get_project_names()):
+        for project_name in self.git.get_updated_repo_names(self._get_project_names()):
             # TODO: wrap in a try/except and roll back repos on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
             try:
@@ -255,7 +200,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     **{'New Version Name': new_version}
                 )
             except NoJIRAIssuesFoundError as exc:
-                key = self.get_project_key(project_name)
+                key = self._get_project_key(project_name)
                 failure_message = (  # TODO: consider putting this information in card fields instead
                     'Since `{latest_final}`, {project_name} '
                     'had {merge_summary} '
@@ -293,7 +238,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 card_dict=fields,
             )
 
-        return f'{len(card_dict)} / {len(self.get_project_names())} projects updated since last release.'
+        return f'{len(card_dict)} / {len(self._get_project_names())} projects updated since last release.'
 
     @botcmd
     def send(self, msg: Message, args) -> str:  # pylint:disable=unused-argument
@@ -303,7 +248,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         approved.
         """
         fields = ()
-        updated_projects = self.git.get_updated_repo_names(self.get_project_names())
+        updated_projects = self.git.get_updated_repo_names(self._get_project_names())
         for project_name in updated_projects:
             try:
                 new_version = self._bump_project_tags(project_name, helpers.Stages.SENT)
@@ -316,7 +261,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                         latest_pre=new_version,
                     ),
                     self._get_merge_summary(project_name)
-                    + f' ({self.jira.get_release_type(self.get_project_key(project_name))})',
+                    + f' ({self.jira.get_release_type(self._get_project_key(project_name))})',
                 ),
             except helpers.InvalidStageTransitionError:
                 failure_message = f'Invalid state transition attempted when bumping {project_name}'
@@ -347,16 +292,16 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         """Get the root of the project's Git repo locally."""
         return self.config['REPOS_ROOT'] + project_name
 
-    def get_project_names(self) -> List[str]:
+    def _get_project_names(self) -> List[str]:
         """Get the list of project names from the configuration"""
         return list(self.config['projects'])
 
-    def get_project_key(self, project_name: str) -> str:
+    def _get_project_key(self, project_name: str) -> str:
         """Get the Jira project key for the given project name"""
         # TODO: catch `KeyError`
         return self.config['projects'][project_name]
 
-    def get_jira_config(self) -> dict:
+    def _get_jira_config(self) -> dict:
         """Return data required for initializing JiraClient"""
         return {
             'URL': self.config['JIRA_URL'],
@@ -365,12 +310,34 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             'TEMPLATE_DIR': self.config['TEMPLATE_DIR'],
         }
 
-    def get_git_config(self) -> dict:
+    def _get_git_config(self) -> dict:
         """Return data required for initializing GitClient"""
         return {
             'REPOS_ROOT': self.config['REPOS_ROOT'],
             'GITHUB_TOKEN': self.config['GITHUB_TOKEN'],
-            'PROJECT_NAMES': self.get_project_names(),
+            'PROJECT_NAMES': self._get_project_names(),
+        }
+
+    def _get_version_card(self, project_name: str) -> Dict:
+        project_key = self._get_project_key(project_name)
+        return {
+            'Key': project_key,
+            'Release Type': self.jira.get_release_type(project_key),
+
+            'Previous Version': '<{url}|{tag}>'.format(
+                url=self.git.get_latest_final_tag_url(project_name),
+                tag=self.git.get_latest_final_tag_name(project_name),
+            ),
+            'Previous vCommit': self.git.get_latest_final_tag_sha(project_name)[:7],
+
+            'Merge Count': self.git.get_merge_count(project_name),
+            # TODO: it would be nice to be able to dynamically pass in functions for fields to show up on the card
+            'New Migrations': self.git.get_migration_count(project_name),  # FIXME: too django-specific
+
+            # To be removed for `fields`
+            'GitHub Tag Comparison': self.git.get_latest_compare_url(project_name),
+            # TODO: find a good public source for thumbnails; follow license
+            'thumbnail': 'https://static.thenounproject.com/png/1662598-200.png',
         }
 
     def _send_version_card(self, message: Message, project_name: str, card_dict: Dict[str, Union[str, int]]) -> None:
@@ -388,3 +355,37 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             fields=tuple(card_dict.items()),
             color='green',
         )
+
+    def _bump_project_tags(self, project_name: str, stage: str) -> str:
+        """Tag the project's repo with the next version's tags and push to origin
+
+        :param stage: the release stage to transition into (seal, send, sign)
+        """
+        latest_final = self.git.get_latest_final_tag_name(project_name)
+        project_key = self._get_project_key(project_name)
+        new_version = self.jira.get_pending_version_name(
+            project_key,
+            stage,
+            latest_final,
+            self.git.get_latest_pre_release_tag_name(project_name, min_version=latest_final),
+        )
+        self.git.tag_develop(project_name, new_version)
+        return new_version
+
+    def _setup_repos(self):
+        """Clone the projects in the configuration into the `REPOS_ROOT` if they do not exist already."""
+        try:
+            os.makedirs(self.config['REPOS_ROOT'])
+        except OSError as exc:
+            # If the error is that the directory already exists, we don't care about it
+            if exc.errno != errno.EEXIST:
+                raise exc
+
+        for project_name in self.config['projects']:
+            if not os.path.exists(os.path.join(self.config['REPOS_ROOT'], project_name)):
+                # Possible race condition if folder somehow gets created between check and creation
+                helpers.run_subprocess(
+                    ['git', 'clone', f"git@github.com:{project_name}.git", project_name],
+                    cwd=self.config['REPOS_ROOT'],
+                )
+
