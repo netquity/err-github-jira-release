@@ -46,6 +46,37 @@ def _execute_path_git(project_root: str, git_command: list) -> CompletedProcess:
 
 class GitClient:
     """Manage local repos and their remotes"""
+    class TagData:
+        """A simple wrapper around `github.Tag.Tag` to provide just the details we need"""
+        def __init__(self, project_name: str, tag: Tag):
+            self._project_name = project_name
+            self._tag = tag
+
+        @property
+        def project_name(self):
+            """Get the name of the project this tag belongs to"""
+            return self._project_name
+
+        @property
+        def name(self):
+            """Get the name of the tag: e.g. v5.0.0"""
+            return self._tag.name
+
+        @property
+        def sha(self):
+            """Get the short hash of the commit the tag is pointing at"""
+            return self._tag.commit.sha[:7]
+
+        @property
+        def url(self):
+            """Get the URL of the GitHub release that corresponds with the tag"""
+            return GitClient.release_url(self.project_name, self.name)
+
+        @property
+        def date(self):
+            """Get the last modified date of the tag"""
+            return self._tag.commit.stats.last_modified
+
     def __init__(self, config: dict):
         self.repos_root = config['REPOS_ROOT']
         self.project_names = config['PROJECT_NAMES']
@@ -238,28 +269,9 @@ class GitClient:
             return latest_pre_tag
         return None
 
-    def get_latest_final_tag_name(self, project_name: str) -> str:
-        """Get the latest final release's tag name"""
-        return GitClient._get_latest_final_tag(self._get_remote_repo(project_name)).name
-
-    def get_latest_final_tag_sha(self, project_name: str) -> str:
-        """Get the latest final release's tag sha"""
-        return GitClient._get_latest_final_tag(self._get_remote_repo(project_name)).commit.sha
-
-    def get_latest_final_tag_url(self, project_name: str) -> str:
-        """Get the latest final release's tag GitHub URL"""
-        return GitClient.release_url(
-            project_name,
-            self.get_latest_final_tag_name(project_name),
-        )
-
-    def get_latest_final_tag_date(self, project_name: str) -> str:
-        """Get the latest final release's tag date"""
-        return GitClient._get_latest_final_tag(self._get_remote_repo(project_name)).commit.stats.last_modified
-
     def get_latest_compare_url(self, project_name: str) -> str:
         """Get the URL to compare the latest final with the latest pre-release on GitHub"""
-        latest_final = self.get_latest_final_tag_name(project_name)
+        latest_final = self.get_latest_final_tag(project_name).name
         return self._get_compare_url(
             project_name,
             old_tag=latest_final,
@@ -271,7 +283,7 @@ class GitClient:
 
     def get_latest_merged_prs_url(self, project_name: str) -> str:
         """Get the URL to see merged PRs since the latest final on GitHub"""
-        start_date = GitClient._parse_github_datetime(self.get_latest_final_tag_date(project_name))
+        start_date = GitClient._parse_github_datetime(self.get_latest_final_tag(project_name).date)
         return GitClient._get_merged_prs_url(
             project_name,
             start_date.isoformat(),  # TODO: timezone?
@@ -280,7 +292,7 @@ class GitClient:
 
     # TODO: this is very Django specific, figure out less opinionated way for non-Django users
     def get_migration_count(self, project_name: str) -> int:
-        tag_name = self.get_latest_final_tag_name(project_name)
+        tag_name = self.get_latest_final_tag(project_name).name
         return len(self._execute_project_git(
             project_name,
             [
@@ -288,6 +300,15 @@ class GitClient:
                 f'HEAD..{tag_name}', '--', 'src/**/migrations/',
             ]
         ).stdout.strip().splitlines())
+
+    def get_latest_final_tag(self, project_name: str) -> 'TagData':
+        """"""
+        return GitClient.TagData(
+            project_name,
+            self._get_latest_final_tag(
+                self._get_remote_repo(project_name),
+            ),
+        )
 
     def _get_remote_repo(self, project_name: str):
         return self.github.get_repo(project_name)
