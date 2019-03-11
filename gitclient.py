@@ -85,13 +85,13 @@ class GitClient:
         def is_prerelease_name(tag_name: str) -> bool:
             """Determine whether the given tag string is a pre-release tag string
 
-            >>> TagData.is_prerelease_name('v1.0.0')
+            >>> GitClient.TagData.is_prerelease_name('v1.0.0')
             False
-            >>> TagData.is_prerelease_name('v1.0.0-rc.1')
+            >>> GitClient.TagData.is_prerelease_name('v1.0.0-rc.1')
             True
-            >>> TagData.is_prerelease_name('v1.0.0-rc.1+sealed')
+            >>> GitClient.TagData.is_prerelease_name('v1.0.0-rc.1+sealed')
             True
-            >>> TagData.is_prerelease_name('v1.0.0+20130313144700')
+            >>> GitClient.TagData.is_prerelease_name('v1.0.0+20130313144700')
             False
             """
             import semver
@@ -112,15 +112,15 @@ class GitClient:
             :param old_version: version string expected to be sorted before the new_version
             :param new_version: version string expected to be sorted after the old_string
             :return: True if expectations are correct and False otherwise
-            >>> TagData.is_older_name('v1.0.0', 'v2.0.0')
+            >>> GitClient.TagData.is_older_name('v1.0.0', 'v2.0.0')
             True
-            >>> TagData.is_older_name('v1.0.0', 'v1.0.0')
+            >>> GitClient.TagData.is_older_name('v1.0.0', 'v1.0.0')
             False
-            >>> TagData.is_older_name('v1.0.0', 'v1.0.0-rc.1')
+            >>> GitClient.TagData.is_older_name('v1.0.0', 'v1.0.0-rc.1')
             False
-            >>> TagData.is_older_name('v1.0.0', 'v1.0.1-rc.1+sealed')
+            >>> GitClient.TagData.is_older_name('v1.0.0', 'v1.0.1-rc.1+sealed')
             True
-            >>> TagData.is_older_name('1.0.0', '2.0.0')  # need to include the leading `v`
+            >>> GitClient.TagData.is_older_name('1.0.0', '2.0.0')  # need to include the leading `v`
             Traceback (most recent call last):
                 ...
             ValueError: .0.0 is not valid SemVer string
