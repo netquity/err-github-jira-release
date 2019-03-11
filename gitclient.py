@@ -259,12 +259,13 @@ class GitClient:
         :param min_version: if included, will ignore all versions below this one
         :return: either the version string of the latest pre-release tag or `None` if one wasn't found
         """
-        latest_pre_tag = GitClient._get_latest_pre_release_tag(self._get_remote_repo(project_name)).name
-        if not min_version:
-            return latest_pre_tag
-        if GitClient._is_older_version(min_version, latest_pre_tag):
-            return latest_pre_tag
-        return None
+        try:
+            latest_pre_tag = GitClient._get_latest_pre_release_tag(self._get_remote_repo(project_name)).name
+            if not min_version:
+                return latest_pre_tag
+        except AttributeError:
+            return None
+        return latest_pre_tag if GitClient._is_older_version(min_version, latest_pre_tag) else None
 
     def get_latest_compare_url(self, project_name: str) -> str:
         """Get the URL to compare the latest final with the latest pre-release on GitHub"""
