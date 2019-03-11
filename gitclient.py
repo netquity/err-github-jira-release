@@ -128,6 +128,11 @@ class GitClient:
             from semver import match
             return match(old_tag_name[1:], f"<{new_tag_name[1:]}")
 
+        @staticmethod
+        def get_compare_url(project_name: str, old_tag_name: str, new_tag_name: str) -> str:
+            """Get the URL to compare two tags on GitHub"""
+            return f'https://github.com/{project_name}/compare/{old_tag_name}...{new_tag_name}'
+
     def __init__(self, config: dict):
         self.repos_root = config['REPOS_ROOT']
         self.project_names = config['PROJECT_NAMES']
@@ -317,10 +322,10 @@ class GitClient:
     def get_latest_compare_url(self, project_name: str) -> str:
         """Get the URL to compare the latest final with the latest pre-release on GitHub"""
         latest_final = self.get_latest_final_tag(project_name).name
-        return self._get_compare_url(
+        return self.TagData.get_compare_url(
             project_name,
-            old_tag=latest_final,
-            new_tag=self.get_latest_pre_release_tag_name(
+            old_tag_name=latest_final,
+            new_tag_name=self.get_latest_pre_release_tag_name(
                 project_name,
                 min_version=latest_final,
             )
@@ -346,13 +351,10 @@ class GitClient:
             ]
         ).stdout.strip().splitlines())
 
-    def get_latest_final_tag(self, project_name: str) -> 'TagData':
-        """"""
-        return GitClient.TagData(
-            project_name,
-            self._get_latest_final_tag(
-                self._get_remote_repo(project_name),
-            ),
+    def get_latest_final_tag(self, project_name: str) -> Optional['TagData']:
+        """Get the latest final tag for a given project name"""
+        return self._get_latest_final_tag(
+            self._get_remote_repo(project_name),
         )
 
     def _get_all_repos(self, project_names: List[str]) -> List[Repository]:
@@ -470,11 +472,6 @@ class GitClient:
         :return: `github.PaginatedList.PaginatedList` of `github.Tag.Tag`
         """
         return origin.get_tags()  # TODO: consider searching local repo instead of GitHub
-
-    @staticmethod
-    def _get_compare_url(project_name: str, old_tag: str, new_tag: str) -> str:
-        """Get the URL to compare two tags on GitHub"""
-        return f'https://github.com/{project_name}/compare/{old_tag}...{new_tag}'
 
     @staticmethod
     def _parse_github_datetime(dt: str) -> datetime:
