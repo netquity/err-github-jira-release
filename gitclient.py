@@ -81,6 +81,53 @@ class GitClient:
             """Get the last modified date of the tag"""
             return self._tag.commit.stats.last_modified
 
+        @staticmethod
+        def is_prerelease_tag_name(tag_name: str) -> bool:
+            """Determine whether the given tag string is a pre-release tag string
+
+            >>> TagData.is_prerelease_tag_name('v1.0.0')
+            False
+            >>> TagData.is_prerelease_tag_name('v1.0.0-rc.1')
+            True
+            >>> TagData.is_prerelease_tag_name('v1.0.0-rc.1+sealed')
+            True
+            >>> TagData.is_prerelease_tag_name('v1.0.0+20130313144700')
+            False
+            """
+            import semver
+            try:
+                # tag_name[1:] because our tags have a leading `v`
+                return semver.parse(tag_name[1:]).get('prerelease') is not None
+            except ValueError as exc:
+                logger.exception(
+                    'Failure parsing tag string=%s',
+                    tag_name,
+                )
+                raise exc
+
+        @staticmethod
+        def is_older_version(old_version: str, new_version: str) -> bool:
+            """Compare two version strings to determine if one is newer than the other
+
+            :param old_version: version string expected to be sorted before the new_version
+            :param new_version: version string expected to be sorted after the old_string
+            :return: True if expectations are correct and False otherwise
+            >>> TagData.is_older_version('v1.0.0', 'v2.0.0')
+            True
+            >>> TagData.is_older_version('v1.0.0', 'v1.0.0')
+            False
+            >>> TagData.is_older_version('v1.0.0', 'v1.0.0-rc.1')
+            False
+            >>> TagData.is_older_version('v1.0.0', 'v1.0.1-rc.1+sealed')
+            True
+            >>> TagData.is_older_version('1.0.0', '2.0.0')  # need to include the leading `v`
+            Traceback (most recent call last):
+                ...
+            ValueError: .0.0 is not valid SemVer string
+            """
+            from semver import match
+            return match(old_version[1:], f"<{new_version[1:]}")
+
     def __init__(self, config: dict):
         self.repos_root = config['REPOS_ROOT']
         self.project_names = config['PROJECT_NAMES']
@@ -265,7 +312,7 @@ class GitClient:
                 return latest_pre_tag
         except AttributeError:
             return None
-        return latest_pre_tag if GitClient._is_older_version(min_version, latest_pre_tag) else None
+        return latest_pre_tag if GitClient.TagData.is_older_version(min_version, latest_pre_tag) else None
 
     def get_latest_compare_url(self, project_name: str) -> str:
         """Get the URL to compare the latest final with the latest pre-release on GitHub"""
@@ -395,7 +442,7 @@ class GitClient:
 
         However, the presence of a SemVer metadata segment has no bearing on whether it's a pre-release tag or not.
         """
-        return cls._find_tag(origin, cls._is_prerelease_tag_name,)
+        return cls._find_tag(origin, cls.TagData.is_prerelease_tag_name,)
 
     @classmethod
     def _get_latest_final_tag(cls, origin: Repository) -> Optional['TagData']:
@@ -403,7 +450,7 @@ class GitClient:
 
         Final tags do not contain a pre-release segment, but may contain a SemVer metadata segment.
         """
-        return cls._find_tag(origin, lambda tag: not cls._is_prerelease_tag_name(tag),)
+        return cls._find_tag(origin, lambda tag: not cls.TagData.is_prerelease_tag_name(tag),)
 
     @classmethod
     def _find_tag(cls, origin: Repository, test: Callable[[str], bool]) -> Optional['TagData']:
@@ -423,29 +470,6 @@ class GitClient:
         :return: `github.PaginatedList.PaginatedList` of `github.Tag.Tag`
         """
         return origin.get_tags()  # TODO: consider searching local repo instead of GitHub
-
-    @staticmethod
-    def _is_older_version(old_version: str, new_version: str) -> bool:
-        """Compare two version strings to determine if one is newer than the other
-
-        :param old_version: version string expected to be sorted before the new_version
-        :param new_version: version string expected to be sorted after the old_string
-        :return: True if expectations are correct and False otherwise
-        >>> GitClient._is_older_version('v1.0.0', 'v2.0.0')
-        True
-        >>> GitClient._is_older_version('v1.0.0', 'v1.0.0')
-        False
-        >>> GitClient._is_older_version('v1.0.0', 'v1.0.0-rc.1')
-        False
-        >>> GitClient._is_older_version('v1.0.0', 'v1.0.1-rc.1+sealed')
-        True
-        >>> GitClient._is_older_version('1.0.0', '2.0.0')  # need to include the leading `v`
-        Traceback (most recent call last):
-            ...
-        ValueError: .0.0 is not valid SemVer string
-        """
-        from semver import match
-        return match(old_version[1:], f"<{new_version[1:]}")
 
     @staticmethod
     def _get_compare_url(project_name: str, old_tag: str, new_tag: str) -> str:
@@ -469,30 +493,6 @@ class GitClient:
         'https://github.com/foo/bar-project/pulls?utf8=✓&q=is:pr+is:closed+merged:2018-01-01T22:02:39+00:00..2018-01-02T22:02:39+00:00'
         """
         return f'https://github.com/{project_name}/pulls?utf8=✓&q=is:pr+is:closed+merged:{start_date}..{end_date}'
-
-    @staticmethod
-    def _is_prerelease_tag_name(tag_name: str) -> bool:
-        """Determine whether the given tag string is a pre-release tag string
-
-        >>> GitClient._is_prerelease_tag_name('v1.0.0')
-        False
-        >>> GitClient._is_prerelease_tag_name('v1.0.0-rc.1')
-        True
-        >>> GitClient._is_prerelease_tag_name('v1.0.0-rc.1+sealed')
-        True
-        >>> GitClient._is_prerelease_tag_name('v1.0.0+20130313144700')
-        False
-        """
-        import semver
-        try:
-            # tag_name[1:] because our tags have a leading `v`
-            return semver.parse(tag_name[1:]).get('prerelease') is not None
-        except ValueError as exc:
-            logger.exception(
-                'Failure parsing tag string=%s',
-                tag_name,
-            )
-            raise exc
 
     @staticmethod
     def release_url(project_name: str, new_version_name: str) -> str:
