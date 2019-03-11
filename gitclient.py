@@ -82,16 +82,16 @@ class GitClient:
             return self._tag.commit.stats.last_modified
 
         @staticmethod
-        def is_prerelease_tag_name(tag_name: str) -> bool:
+        def is_prerelease_name(tag_name: str) -> bool:
             """Determine whether the given tag string is a pre-release tag string
 
-            >>> TagData.is_prerelease_tag_name('v1.0.0')
+            >>> TagData.is_prerelease_name('v1.0.0')
             False
-            >>> TagData.is_prerelease_tag_name('v1.0.0-rc.1')
+            >>> TagData.is_prerelease_name('v1.0.0-rc.1')
             True
-            >>> TagData.is_prerelease_tag_name('v1.0.0-rc.1+sealed')
+            >>> TagData.is_prerelease_name('v1.0.0-rc.1+sealed')
             True
-            >>> TagData.is_prerelease_tag_name('v1.0.0+20130313144700')
+            >>> TagData.is_prerelease_name('v1.0.0+20130313144700')
             False
             """
             import semver
@@ -106,27 +106,27 @@ class GitClient:
                 raise exc
 
         @staticmethod
-        def is_older_version(old_version: str, new_version: str) -> bool:
+        def is_older_name(old_tag_name: str, new_tag_name: str) -> bool:
             """Compare two version strings to determine if one is newer than the other
 
             :param old_version: version string expected to be sorted before the new_version
             :param new_version: version string expected to be sorted after the old_string
             :return: True if expectations are correct and False otherwise
-            >>> TagData.is_older_version('v1.0.0', 'v2.0.0')
+            >>> TagData.is_older_name('v1.0.0', 'v2.0.0')
             True
-            >>> TagData.is_older_version('v1.0.0', 'v1.0.0')
+            >>> TagData.is_older_name('v1.0.0', 'v1.0.0')
             False
-            >>> TagData.is_older_version('v1.0.0', 'v1.0.0-rc.1')
+            >>> TagData.is_older_name('v1.0.0', 'v1.0.0-rc.1')
             False
-            >>> TagData.is_older_version('v1.0.0', 'v1.0.1-rc.1+sealed')
+            >>> TagData.is_older_name('v1.0.0', 'v1.0.1-rc.1+sealed')
             True
-            >>> TagData.is_older_version('1.0.0', '2.0.0')  # need to include the leading `v`
+            >>> TagData.is_older_name('1.0.0', '2.0.0')  # need to include the leading `v`
             Traceback (most recent call last):
                 ...
             ValueError: .0.0 is not valid SemVer string
             """
             from semver import match
-            return match(old_version[1:], f"<{new_version[1:]}")
+            return match(old_tag_name[1:], f"<{new_tag_name[1:]}")
 
     def __init__(self, config: dict):
         self.repos_root = config['REPOS_ROOT']
@@ -312,7 +312,7 @@ class GitClient:
                 return latest_pre_tag
         except AttributeError:
             return None
-        return latest_pre_tag if GitClient.TagData.is_older_version(min_version, latest_pre_tag) else None
+        return latest_pre_tag if GitClient.TagData.is_older_name(min_version, latest_pre_tag) else None
 
     def get_latest_compare_url(self, project_name: str) -> str:
         """Get the URL to compare the latest final with the latest pre-release on GitHub"""
@@ -442,7 +442,7 @@ class GitClient:
 
         However, the presence of a SemVer metadata segment has no bearing on whether it's a pre-release tag or not.
         """
-        return cls._find_tag(origin, cls.TagData.is_prerelease_tag_name,)
+        return cls._find_tag(origin, cls.TagData.is_prerelease_name,)
 
     @classmethod
     def _get_latest_final_tag(cls, origin: Repository) -> Optional['TagData']:
@@ -450,7 +450,7 @@ class GitClient:
 
         Final tags do not contain a pre-release segment, but may contain a SemVer metadata segment.
         """
-        return cls._find_tag(origin, lambda tag: not cls.TagData.is_prerelease_tag_name(tag),)
+        return cls._find_tag(origin, lambda tag: not cls.TagData.is_prerelease_name(tag),)
 
     @classmethod
     def _find_tag(cls, origin: Repository, test: Callable[[str], bool]) -> Optional['TagData']:
