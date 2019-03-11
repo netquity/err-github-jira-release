@@ -116,7 +116,7 @@ class GitClient:
         """Do a hard reset on a repo to a target ref"""
         return self._execute_project_git(self._get_project_root(project_name), ['reset', '--hard', ref])
 
-    def create_tag(self, project_name: str, tag_name: str) -> None:
+    def create_tag(self, project_name: str, tag_name: str) -> None:  # TODO: return TagData
         """Create a git tag on whatever commit HEAD is pointing at"""
         tag_name = f'v{tag_name}'
         self._execute_project_git(
@@ -384,7 +384,7 @@ class GitClient:
         return os.path.join(self.repos_root, project_name)
 
     @classmethod
-    def _get_latest_pre_release_tag(cls, origin: Repository) -> Optional[Tag]:
+    def _get_latest_pre_release_tag(cls, origin: Repository) -> Optional['TagData']:
         """Get the latest pre-release tag
 
         Tags are identified as pre-release tags if they contain a pre-release segment such as the following, where the
@@ -394,20 +394,26 @@ class GitClient:
 
         However, the presence of a SemVer metadata segment has no bearing on whether it's a pre-release tag or not.
         """
-        return cls._find_tag(origin, cls._is_prerelease_tag_name)
+        return cls._find_tag(origin, cls._is_prerelease_tag_name,)
 
     @classmethod
-    def _get_latest_final_tag(cls, origin: Repository) -> Optional[Tag]:
+    def _get_latest_final_tag(cls, origin: Repository) -> Optional['TagData']:
         """Get the latest final tag
 
         Final tags do not contain a pre-release segment, but may contain a SemVer metadata segment.
         """
-        return cls._find_tag(origin, lambda tag: not cls._is_prerelease_tag_name(tag))
+        return cls._find_tag(origin, lambda tag: not cls._is_prerelease_tag_name(tag),)
 
     @classmethod
-    def _find_tag(cls, origin: Repository, test: Callable[[str], bool]) -> Optional[Tag]:
+    def _find_tag(cls, origin: Repository, test: Callable[[str], bool]) -> Optional['TagData']:
         """Return the first tag that passes a given test or `None` if none found"""
-        return next((tag for tag in cls._get_tags(origin) if test(tag.name)), None)
+        try:
+            return cls.TagData(
+                origin.full_name,
+                next((tag for tag in cls._get_tags(origin) if test(tag.name)), None),
+            )
+        except ValueError:
+            return None
 
     @staticmethod
     def _get_tags(origin: Repository) -> PaginatedList:
