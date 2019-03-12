@@ -9,6 +9,8 @@ import shutil
 import sys
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from functools import partial
+from inspect import getfullargspec
 from subprocess import CompletedProcess, CalledProcessError
 
 from typing import Callable, List, Generator, Optional
@@ -152,6 +154,26 @@ class GitClient:
             self._restore_repo(project_name, backup_path)
             logger.error('%s: git commands failed; repo backup %s restored', project_name, initial_ref)
             raise exc
+
+    @contextmanager
+    def project_git(self, project_name: str):
+        """Context wrapper to provide the project_name in a more limited scope"""
+        class ProjectGit:  # pylint:disable=too-few-public-methods
+            """A proxy object for marshalling calls to the underlying gitclient"""
+            def __init__(self, project_name: str, git: GitClient):
+                self._project_name = project_name
+                self._git = git
+
+            def __getattribute__(self, name: str):
+                """Intercept calls to gitclient methods and project_name argument if the target method neets it"""
+                if name in ['_git', '_project_name']:
+                    return super(ProjectGit, self).__getattribute__(name)
+                method = self._git.__getattribute__(name)
+                if 'project_name' not in getfullargspec(method).args:
+                    return method
+                return partial(method, project_name=self._project_name)
+
+        yield ProjectGit(project_name, self)
 
     def get_latest_ref(self, project_name: str) -> str:
         """Get the latest rev hash from reflog"""

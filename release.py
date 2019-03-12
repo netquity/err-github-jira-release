@@ -319,27 +319,28 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         }
 
     def _get_version_card(self, project_name: str) -> Dict:
-        tag = self.git.get_latest_final_tag(project_name)
-        project_key = self._get_project_key(project_name)
-        return {
-            'Key': project_key,
-            'Release Type': self.jira.get_release_type(project_key),
+        with self.git.project_git(project_name) as git:
+            tag = git.get_latest_final_tag()
+            project_key = self._get_project_key(project_name)
+            return {
+                'Key': project_key,
+                'Release Type': self.jira.get_release_type(project_key),
 
-            'Previous Version': '<{url}|{tag}>'.format(
-                url=tag.url,
-                tag=tag.name,
-            ),
-            'Previous vCommit': tag.sha,
+                'Previous Version': '<{url}|{tag}>'.format(
+                    url=tag.url,
+                    tag=tag.name,
+                ),
+                'Previous vCommit': tag.sha,
 
-            'Merge Count': self.git.get_merge_count(project_name),
-            # TODO: it would be nice to be able to dynamically pass in functions for fields to show up on the card
-            'New Migrations': self.git.get_migration_count(project_name),  # FIXME: too django-specific
+                'Merge Count': git.get_merge_count(),
+                # TODO: it would be nice to be able to dynamically pass in functions for fields to show up on the card
+                'New Migrations': git.get_migration_count(),  # FIXME: too django-specific
 
-            # To be removed for `fields`
-            'GitHub Tag Comparison': self.git.get_latest_compare_url(project_name),
-            # TODO: find a good public source for thumbnails; follow license
-            'thumbnail': 'https://static.thenounproject.com/png/1662598-200.png',
-        }
+                # To be removed for `fields`
+                'GitHub Tag Comparison': git.get_latest_compare_url(),
+                # TODO: find a good public source for thumbnails; follow license
+                'thumbnail': 'https://static.thenounproject.com/png/1662598-200.png',
+            }
 
     def _send_version_card(self, message: Message, project_name: str, card_dict: Dict[str, Union[str, int]]) -> None:
         """Send the Slack card containing version set information
@@ -362,16 +363,17 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
 
         :param stage: the release stage to transition into (seal, send, sign)
         """
-        final_tag_name = self.git.get_latest_final_tag(project_name).name
-        project_key = self._get_project_key(project_name)
-        new_version = self.jira.get_pending_version_name(
-            project_key,
-            stage,
-            final_tag_name,
-            self.git.get_latest_pre_release_tag_name(project_name, min_version=final_tag_name),
-        )
-        self.git.tag_develop(project_name, new_version)
-        return new_version
+        with self.git.project_git(project_name) as git:
+            final_tag_name = git.get_latest_final_tag().name
+            project_key = self._get_project_key(project_name)
+            new_version = self.jira.get_pending_version_name(
+                project_key,
+                stage,
+                final_tag_name,
+                git.get_latest_pre_release_tag_name(min_version=final_tag_name),
+            )
+            git.tag_develop(tag_name=new_version)
+            return new_version
 
     def _setup_repos(self):
         """Clone the projects in the configuration into the `REPOS_ROOT` if they do not exist already."""
