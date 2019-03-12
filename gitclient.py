@@ -496,7 +496,7 @@ class GitClient:
         return origin.get_tags()  # TODO: consider searching local repo instead of GitHub
 
     @staticmethod
-    def _parse_github_datetime(dt: str) -> datetime:
+    def _parse_github_datetime(dt: str) -> datetime:  # pylint:disable=invalid-name
         """Take GitHub's ISO8601 datetime string and return a datetime object
 
         >>> GitClient._parse_github_datetime('Thu, 28 Feb 2019 17:24:21 GMT')
@@ -508,8 +508,10 @@ class GitClient:
     def _get_merged_prs_url(project_name: str, start_date: str, end_date: str) -> str:
         """Get the URL to see merged PRs in a date range on GitHub
 
-        >>> GitClient._get_merged_prs_url('foo/bar-project', '2018-01-01T22:02:39+00:00', '2018-01-02T22:02:39+00:00')
-        'https://github.com/foo/bar-project/pulls?utf8=✓&q=is:pr+is:closed+merged:2018-01-01T22:02:39+00:00..2018-01-02T22:02:39+00:00'
+        >>> GitClient._get_merged_prs_url('foo/bar-prj', '2018-01-01T22:02:39+00:00', '2018-01-02T22:02:39+00:00')[:46]
+        'https://github.com/foo/bar-prj/pulls?utf8=✓&q='
+        >>> GitClient._get_merged_prs_url('foo/bar-prj', '2018-01-01T22:02:39+00:00', '2018-01-02T22:02:39+00:00')[46:]
+        'is:pr+is:closed+merged:2018-01-01T22:02:39+00:00..2018-01-02T22:02:39+00:00'
         """
         return f'https://github.com/{project_name}/pulls?utf8=✓&q=is:pr+is:closed+merged:{start_date}..{end_date}'
 
