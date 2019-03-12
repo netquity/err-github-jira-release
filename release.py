@@ -371,7 +371,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 stage,
                 final_tag_name,
                 git.get_latest_pre_release_tag_name(min_version=final_tag_name),
-            )
+            ) + f'.{git.get_rev_hash(ref="origin/develop")[:7]}'
             git.tag_develop(tag_name=new_version)
             return new_version
 

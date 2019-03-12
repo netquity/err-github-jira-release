@@ -104,7 +104,7 @@ def bump_version(release_type: str, stage: str, final_version: str, pre_version:
     """
     import semver
     if pre_version is not None:
-        pre_stage = pre_version.split('+')[1]
+        pre_stage = pre_version.split('+')[1].split('.')[0]
         if not is_valid_transition(pre_stage, stage):
             raise InvalidStageTransitionError(f'Cannot transition from {pre_stage} to {stage}')
     verinfo = semver.parse(pre_version or final_version)
