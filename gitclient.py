@@ -198,14 +198,14 @@ class GitClient:
             ['tag', '-s', tag_name, '-m', tag_name, ]
         )
 
-    def create_ref(self, project_name: str, new_version_name: str) -> None:
+    def create_ref(self, project_name: str, new_version_name: str, ref: str = 'master') -> None:
         """Create a ref and push it to origin
 
         https://developer.github.com/v3/git/refs/#create-a-reference
         """
         self._get_remote_repo(project_name).create_git_ref(
             f'refs/tags/v{new_version_name}',
-            self.get_rev_hash(project_name, 'master'),  # TODO: this will have to be something else for hotfixes
+            self.get_rev_hash(project_name, ref),  # TODO: this will have to be something else for hotfixes
         )
 
     def create_release(self, project_name: str, release_notes: str, new_version_name: str):
@@ -229,7 +229,7 @@ class GitClient:
         """
         self.checkout_latest(project_name, 'develop')
         self.create_tag(project_name, tag_name)
-        self.create_ref(project_name, tag_name)
+        self.create_ref(project_name, tag_name, 'develop')
 
     def get_rev_hash(self, project_name: str, ref: str) -> str:
         """Get the SHA1 hash of a particular git ref"""
