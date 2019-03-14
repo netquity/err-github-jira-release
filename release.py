@@ -191,6 +191,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         """Initiate the release sequence by tagging updated projects"""
         card_dict = {}
         for project_name in self.git.get_updated_repo_names(self._get_project_names()):
+        for project_name in self.git.get_updated_repo_names(self._get_project_names(), since_final=False):
             # TODO: wrap in a try/except and roll back repos on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
             try:

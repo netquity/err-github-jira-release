@@ -314,9 +314,17 @@ class GitClient:
 
         return self.get_rev_hash(project_name, 'develop')
 
-    def get_updated_repo_names(self, project_names: List[str]) -> List[str]:
-        """Get a list of the full names of the repos that have commits to develop since last final release"""
-        return [project.full_name for project in self._get_updated_repos(project_names)]
+    def get_updated_repo_names(self, project_names: List[str], since_final: bool = True) -> List[str]:
+        """
+        Get a list of the full names of the repos that have commits to develop since either the last final or
+        pre-release
+
+        Note that when the develop branch is updated immediately after a release, it creates a merge commit, which is
+        not counted for the purposes of this method.
+
+        :param since_final: if True, look for updates since the latest final tag; otherwise, since latest pre-release
+        """
+        return [project.full_name for project in self._get_updated_repos(project_names, since_final)]
 
     def get_merge_count(self, project_name: str) -> int:
         """Get the number of merges to develop since the last final tag"""
@@ -401,7 +409,7 @@ class GitClient:
     def _get_updated_repos(self, project_names: List[str], since_final: bool = True) -> List[Repository]:
         """Get a list of repos that have commits to develop since either the last final or pre-release
 
-        :param since_final: if True, look for the latest final tag; otherwise, look for latest pre-release
+        :param since_final: if True, look for updates since the latest final tag; otherwise, since latest pre-release
         """
         return [
             repo for repo in self._get_all_repos(project_names)
