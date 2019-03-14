@@ -519,7 +519,7 @@ class GitClient:
 
     @staticmethod
     def _get_tags(origin: Repository) -> PaginatedList:
-        """Get all the tags for the repo
+        """Get all the tags for the origin
 
         :return: `github.PaginatedList.PaginatedList` of `github.Tag.Tag`
         """
