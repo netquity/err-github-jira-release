@@ -38,6 +38,9 @@ def _execute_path_git(project_root: str, git_command: list) -> CompletedProcess:
         - `origin` is used to refer to the remote repo that a project was originally cloned from; there is only one per
           repo
         - `repo` is used to refer to the local repo that was cloned from origin
+        - Public methods are always dealing with the latest changes. For example, `get_ref` will always get the most
+          recent revision hash from the reflog; `get_merged_prs_url` will get show merged PRs since the latest final
+          release.
     """
     try:
         return helpers.run_subprocess(
@@ -155,7 +158,7 @@ class GitClient:
 
         Records reflog position before doing anything and resets to this position if any of the git commands fail.
         """
-        initial_ref = self.get_latest_ref(project_name)
+        initial_ref = self.get_ref(project_name)
         backup_path = self._backup_repo(project_name)
         try:
             yield lambda cmd: self._execute_project_git(project_name, cmd)
@@ -184,7 +187,7 @@ class GitClient:
 
         yield ProjectGit(project_name, self)
 
-    def get_latest_ref(self, project_name: str) -> str:
+    def get_ref(self, project_name: str) -> str:
         """Get the latest rev hash from reflog"""
         return self._execute_project_git(
             project_name,
@@ -345,7 +348,7 @@ class GitClient:
             ),
         )
 
-    def get_latest_pre_release_tag_name(self, project_name: str, min_version: str = None) -> Optional[str]:
+    def get_pre_release_tag_name(self, project_name: str, min_version: str = None) -> Optional[str]:
         """Get the latest pre-release tag name
 
         :param min_version: if included, will ignore all versions below this one
@@ -359,21 +362,21 @@ class GitClient:
             return None
         return latest_pre_tag if GitClient.TagData.is_older_name(min_version, latest_pre_tag) else None
 
-    def get_latest_compare_url(self, project_name: str) -> str:
+    def get_compare_url(self, project_name: str) -> str:
         """Get the URL to compare the latest final with the latest pre-release on GitHub"""
-        latest_final = self.get_latest_final_tag(project_name).name
+        latest_final = self.get_final_tag(project_name).name
         return self.TagData.get_compare_url(
             project_name,
             old_tag_name=latest_final,
-            new_tag_name=self.get_latest_pre_release_tag_name(
+            new_tag_name=self.get_pre_release_tag_name(
                 project_name,
                 min_version=latest_final,
             )
         )
 
-    def get_latest_merged_prs_url(self, project_name: str) -> str:
+    def get_merged_prs_url(self, project_name: str) -> str:
         """Get the URL to see merged PRs since the latest final on GitHub"""
-        start_date = GitClient._parse_github_datetime(self.get_latest_final_tag(project_name).date)
+        start_date = GitClient._parse_github_datetime(self.get_final_tag(project_name).date)
         return GitClient._get_merged_prs_url(
             project_name,
             start_date.isoformat(),  # TODO: timezone?
@@ -383,7 +386,7 @@ class GitClient:
     # TODO: this is very Django specific, figure out less opinionated way for non-Django users
     def get_migration_count(self, project_name: str) -> int:
         """Get the number of new migration files since the latest final"""
-        tag_name = self.get_latest_final_tag(project_name).name
+        tag_name = self.get_final_tag(project_name).name
         return len(self._execute_project_git(
             project_name,
             [
@@ -392,7 +395,7 @@ class GitClient:
             ]
         ).stdout.strip().splitlines())
 
-    def get_latest_final_tag(self, project_name: str) -> Optional['TagData']:
+    def get_final_tag(self, project_name: str) -> Optional['TagData']:
         """Get the latest final tag for a given project name"""
         return GitClient._get_latest_tag(
             origin=self._get_origin(project_name),
@@ -444,7 +447,7 @@ class GitClient:
         :return: the dst path
         """
         # TODO: maybe it would be better to back up the whole repos root, instead of individual repos
-        ref = self.get_latest_ref(project_name)[:7]
+        ref = self.get_ref(project_name)[:7]
         return helpers.copytree(
             self._get_project_root(project_name),
             self._get_backups_path(project_name),
@@ -460,7 +463,7 @@ class GitClient:
         backup_swap = helpers.copytree(
             src=backup_path,
             dst_parent=self._get_backups_path(project_name),
-            dst=self.get_latest_ref(project_name)[:7] + '.swap',
+            dst=self.get_ref(project_name)[:7] + '.swap',
         )
         # move the backup to the normal repo location
         project_root = self._get_project_root(project_name)

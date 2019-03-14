@@ -207,7 +207,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     'had {merge_summary} '
                     'but <{latest_jira_issues}|Jira> {exc_msg}.'
                 ).format(
-                    latest_final=self.git.get_latest_final_tag(project_name).name,
+                    latest_final=self.git.get_final_tag(project_name).name,
                     project_name=project_name,
                     merge_summary=self._get_merge_summary(project_name),
                     latest_jira_issues=self.jira.get_latest_issues_url(key),
@@ -258,7 +258,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 fields += (
                     '{repo_name} - {latest_final} → {latest_pre}'.format(  # field title
                         repo_name=project_name.split("/")[1],  # get rid of org name for brevity
-                        latest_final=self.git.get_latest_final_tag(project_name).name,
+                        latest_final=self.git.get_final_tag(project_name).name,
                         latest_pre=new_version,
                     ),
                     self._get_merge_summary(project_name)
@@ -285,7 +285,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     def _get_merge_summary(self, project_name: str) -> str:
         """Return a link to GitHub's issue search showing the merged PRs """
         return '<{url}|{pr_count} merged PR(s)>'.format(
-            url=self.git.get_latest_merged_prs_url(project_name),
+            url=self.git.get_merged_prs_url(project_name),
             pr_count=self.git.get_merge_count(project_name),
         )
 
@@ -321,7 +321,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
 
     def _get_version_card(self, project_name: str) -> Dict:
         with self.git.project_git(project_name) as git:
-            tag = git.get_latest_final_tag()
+            tag = git.get_final_tag()
             project_key = self._get_project_key(project_name)
             return {
                 'Key': project_key,
@@ -338,7 +338,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 'New Migrations': git.get_migration_count(),  # FIXME: too django-specific
 
                 # To be removed for `fields`
-                'GitHub Tag Comparison': git.get_latest_compare_url(),
+                'GitHub Tag Comparison': git.get_compare_url(),
                 # TODO: find a good public source for thumbnails; follow license
                 'thumbnail': 'https://static.thenounproject.com/png/1662598-200.png',
             }
@@ -365,13 +365,13 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         :param stage: the release stage to transition into (seal, send, sign)
         """
         with self.git.project_git(project_name) as git:
-            final_tag = git.get_latest_final_tag()
+            final_tag = git.get_final_tag()
             project_key = self._get_project_key(project_name)
             new_version = self.jira.get_pending_version_name(
                 project_key,
                 stage,
                 final_tag.name,
-                git.get_latest_pre_release_tag_name(min_version=final_tag.name),
+                git.get_pre_release_tag_name(min_version=final_tag.name),
             ) + f'.{git.get_rev_hash(ref="origin/develop")[:7]}'
             git.tag_develop(tag_name=new_version)
             return new_version
@@ -392,4 +392,3 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     ['git', 'clone', f"git@github.com:{project_name}.git", project_name],
                     cwd=self.config['REPOS_ROOT'],
                 )
-

@@ -78,8 +78,8 @@ def test_get_project_root(gitclient):  # pylint:disable=redefined-outer-name
     )
 
 
-def test_get_latest_ref(git_repo, gitclient):  # pylint:disable=redefined-outer-name
-    assert git_repo.api.git.reflog('--format=%H', '-1') == gitclient.get_latest_ref(
+def test_get_ref(git_repo, gitclient):  # pylint:disable=redefined-outer-name
+    assert git_repo.api.git.reflog('--format=%H', '-1') == gitclient.get_ref(
         PROJECT_NAME
     )
 
@@ -109,7 +109,7 @@ def test_get_backups_path(gitclient):  # pylint:disable=redefined-outer-name
 
 def test_restore_repo(git_repo, gitclient):  # pylint:disable=redefined-outer-name
     """Check that repo backups are properly restored"""
-    ref = gitclient.get_latest_ref(PROJECT_NAME)[:7]
+    ref = gitclient.get_ref(PROJECT_NAME)[:7]
     backup_path = os.path.join(gitclient._get_backups_path(PROJECT_NAME), ref)
     gitclient._get_project_root(PROJECT_NAME)
 
@@ -121,11 +121,11 @@ def test_restore_repo(git_repo, gitclient):  # pylint:disable=redefined-outer-na
     git_repo.run('git add goodbye.txt')
     git_repo.api.index.commit("Final commit")
 
-    assert ref != gitclient.get_latest_ref(PROJECT_NAME)[:7]  # ref was updated with the last commit
+    assert ref != gitclient.get_ref(PROJECT_NAME)[:7]  # ref was updated with the last commit
 
     gitclient._restore_repo(PROJECT_NAME, backup_path)
 
-    assert ref == gitclient.get_latest_ref(PROJECT_NAME)[:7]  # original ref restored after _restore_repo
+    assert ref == gitclient.get_ref(PROJECT_NAME)[:7]  # original ref restored after _restore_repo
 
     assert os.path.exists(backup_path)  # the backup should still be available after restoring
     assert not os.path.exists(backup_path + '.swap')  # delete the backup swap
