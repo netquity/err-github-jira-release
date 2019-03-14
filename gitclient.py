@@ -373,6 +373,7 @@ class GitClient:
 
     # TODO: this is very Django specific, figure out less opinionated way for non-Django users
     def get_migration_count(self, project_name: str) -> int:
+        """Get the number of new migration files since the latest final"""
         tag_name = self.get_latest_final_tag(project_name).name
         return len(self._execute_project_git(
             project_name,
