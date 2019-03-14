@@ -265,7 +265,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     + f' ({self.jira.get_release_type(self._get_project_key(project_name))})',
                 ),
             except helpers.InvalidStageTransitionError:
-                failure_message = f'Invalid state transition attempted when bumping {project_name}'
+                failure_message = f'Invalid stage transition attempted when bumping {project_name}'
                 self.log.exception(
                     failure_message,
                 )
