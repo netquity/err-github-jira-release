@@ -190,7 +190,6 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     def seal(self, msg: Message, args) -> Optional[str]:  # pylint:disable=unused-argument
         """Initiate the release sequence by tagging updated projects"""
         card_dict = {}
-        for project_name in self.git.get_updated_repo_names(self._get_project_names()):
         for project_name in self.git.get_updated_repo_names(self._get_project_names(), since_final=False):
             # TODO: wrap in a try/except and roll back repos on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
@@ -371,7 +370,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 project_key,
                 stage,
                 final_tag.name,
-                git.get_pre_release_tag_name(min_version=final_tag.name),
+                git.get_prerelease_tag_name(min_version=final_tag.name),
             ) + f'.{git.get_rev_hash(ref="origin/develop")[:7]}'
             git.tag_develop(tag_name=new_version)
             return new_version

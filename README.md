@@ -7,7 +7,7 @@ to determine the version number and to produce changelogs.
 - [SemVer][4] and [PEP440][2] version numbers
 - detailed changelog creation
 - hotfix-release support
-- pre-release support
+- prerelease support
 - an opinionated workflow
 
 This plugin **does not** manage actually deploying code to your server.  Any documentation here which mentions deployment
@@ -47,11 +47,16 @@ Hotfix releases and standard releases follow the same versioning scheme, with a 
   - `Affects Version/s`
   - `Fix Version/s`
 
+# Config Requirements
+- include a slack token
+- fill out configuration template
+    - set `UAT_CHANNEL_IDENTIFIER`
+
 # Versioning
 ## Format Example
 - `1.1.0-rc.1+sealed`: entire version string
 - `1.1.0`: SemVer release version segment
-- `-rc.1`: pre-release segment (starts at 1)
+- `-rc.1`: prerelease segment (starts at 1)
 - `+sealed`: metadata segment
 
 ## Workflow Example
@@ -71,7 +76,7 @@ Hotfix releases and standard releases follow the same versioning scheme, with a 
   - fail
     - create two new tickets (major, patch) and merge their PRs to `develop`
     - re-initiate release sequence, creating a new version tag on `develop` to `2.0.0-rc.2+sealed`:
-      - increment pre-release segment `rc.N` by one:
+      - increment prerelease segment `rc.N` by one:
         - `rc.1` -> `rc.2`
       - reset metadata segment:
         - `sent` -> `sealed`

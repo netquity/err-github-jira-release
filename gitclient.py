@@ -329,12 +329,12 @@ class GitClient:
     def get_updated_repo_names(self, project_names: List[str], since_final: bool = True) -> List[str]:
         """
         Get a list of the full names of the repos that have commits to develop since either the last final or
-        pre-release
+        prerelease
 
         Note that when the develop branch is updated immediately after a release, it creates a merge commit, which is
         not counted for the purposes of this method.
 
-        :param since_final: if True, look for updates since the latest final tag; otherwise, since latest pre-release
+        :param since_final: if True, look for updates since the latest final tag; otherwise, since latest prerelease
         """
         return [project.full_name for project in self._get_updated_origins(project_names, since_final)]
 
@@ -348,11 +348,11 @@ class GitClient:
             ),
         )
 
-    def get_pre_release_tag_name(self, project_name: str, min_version: str = None) -> Optional[str]:
-        """Get the latest pre-release tag name
+    def get_prerelease_tag_name(self, project_name: str, min_version: str = None) -> Optional[str]:
+        """Get the latest prerelease tag name
 
         :param min_version: if included, will ignore all versions below this one
-        :return: either the version string of the latest pre-release tag or `None` if one wasn't found
+        :return: either the version string of the latest prerelease tag or `None` if one wasn't found
         """
         try:
             latest_pre_tag = GitClient._get_latest_tag(self._get_origin(project_name), False).name
@@ -363,12 +363,12 @@ class GitClient:
         return latest_pre_tag if GitClient.TagData.is_older_name(min_version, latest_pre_tag) else None
 
     def get_compare_url(self, project_name: str) -> str:
-        """Get the URL to compare the latest final with the latest pre-release on GitHub"""
+        """Get the URL to compare the latest final with the latest prerelease on GitHub"""
         latest_final = self.get_final_tag(project_name).name
         return self.TagData.get_compare_url(
             project_name,
             old_tag_name=latest_final,
-            new_tag_name=self.get_pre_release_tag_name(
+            new_tag_name=self.get_prerelease_tag_name(
                 project_name,
                 min_version=latest_final,
             )
@@ -417,16 +417,16 @@ class GitClient:
         return self.github.get_repo(project_name)
 
     def _is_updated_since(self, origin: Repository, since_final: bool = True) -> bool:
-        """Check if the given origin has commits to develop since either the last final or pre-release"""
+        """Check if the given origin has commits to develop since either the last final or prerelease"""
         return self._get_merge_count_since(
             origin.full_name,
             GitClient._get_latest_tag(origin, since_final)
         ) > 0
 
     def _get_updated_origins(self, project_names: List[str], since_final: bool = True) -> List[Repository]:
-        """Get a list of the `origin` repos that have commits to develop since either the last final or pre-release
+        """Get a list of the `origin` repos that have commits to develop since either the last final or prerelease
 
-        :param since_final: if True, look for updates since the latest final tag; otherwise, since latest pre-release
+        :param since_final: if True, look for updates since the latest final tag; otherwise, since latest prerelease
         """
         return [
             origin for origin in self._get_origins(project_names)
@@ -487,18 +487,18 @@ class GitClient:
 
     @classmethod
     def _get_latest_tag(cls, origin: Repository, find_final: bool = True) -> Optional['TagData']:
-        """Get the latest final or pre-release tag
+        """Get the latest final or prerelease tag
 
-        Final tags do not contain a pre-release segment, but may contain a SemVer metadata segment.
+        Final tags do not contain a prerelease segment, but may contain a SemVer metadata segment.
 
-        Tags are identified as pre-release tags if they contain a pre-release segment such as the following, where the
-        hyphen-separated component (`rc.1`) makes up the pre-release segment:
+        Tags are identified as prerelease tags if they contain a prerelease segment such as the following, where the
+        hyphen-separated component (`rc.1`) makes up the prerelease segment:
         v1.0.0-rc.1
         v1.0.0-rc.1+sealed
 
-        However, the presence of a SemVer metadata segment has no bearing on whether it's a pre-release tag or not.
+        However, the presence of a SemVer metadata segment has no bearing on whether it's a prerelease tag or not.
 
-        :param find_final: if True, look for the latest final tag; otherwise, look for latest pre-release
+        :param find_final: if True, look for the latest final tag; otherwise, look for latest prerelease
         """
         return cls._find_tag(
             origin,
