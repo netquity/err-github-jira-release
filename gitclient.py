@@ -32,7 +32,13 @@ class GitCommandError(Exception):
 
 
 def _execute_path_git(project_root: str, git_command: list) -> CompletedProcess:
-    """Execute a git command in a specific directory"""
+    """Execute a git command in a specific directory
+
+    Conventions:
+        - `origin` is used to refer to the remote repo that a project was originally cloned from; there is only one per
+          repo
+        - `repo` is used to refer to the local repo that was cloned from origin
+    """
     try:
         return helpers.run_subprocess(
             ['git'] + git_command,
@@ -50,6 +56,7 @@ def _execute_path_git(project_root: str, git_command: list) -> CompletedProcess:
 
 class GitClient:
     """Manage local repos and their remotes"""
+
     class TagData:
         """A simple wrapper around `github.Tag.Tag` to provide just the details we need"""
         def __init__(self, project_name: str, tag: Tag):
@@ -205,7 +212,7 @@ class GitClient:
 
         https://developer.github.com/v3/git/refs/#create-a-reference
         """
-        self._get_remote_repo(project_name).create_git_ref(
+        self._get_origin(project_name).create_git_ref(
             f'refs/tags/v{new_version_name}',
             self.get_rev_hash(project_name, ref),  # TODO: this will have to be something else for hotfixes
         )
@@ -215,7 +222,7 @@ class GitClient:
 
         https://developer.github.com/v3/repos/releases/#create-a-release
         """
-        self._get_remote_repo(project_name).create_git_release(
+        self._get_origin(project_name).create_git_release(
             tag=f'v{new_version_name}',
             name=f'{project_name} - Version {new_version_name}',
             message=release_notes,
@@ -326,14 +333,14 @@ class GitClient:
 
         :param since_final: if True, look for updates since the latest final tag; otherwise, since latest pre-release
         """
-        return [project.full_name for project in self._get_updated_repos(project_names, since_final)]
+        return [project.full_name for project in self._get_updated_origins(project_names, since_final)]
 
     def get_merge_count(self, project_name: str) -> int:
         """Get the number of merges to develop since the last final tag"""
         return self._get_merge_count_since(
             project_name,
             GitClient._get_latest_tag(
-                origin=self._get_remote_repo(project_name),
+                origin=self._get_origin(project_name),
                 find_final=True,
             ),
         )
@@ -345,7 +352,7 @@ class GitClient:
         :return: either the version string of the latest pre-release tag or `None` if one wasn't found
         """
         try:
-            latest_pre_tag = GitClient._get_latest_tag(self._get_remote_repo(project_name), False).name
+            latest_pre_tag = GitClient._get_latest_tag(self._get_origin(project_name), False).name
             if not min_version:
                 return latest_pre_tag
         except AttributeError:
@@ -388,35 +395,39 @@ class GitClient:
     def get_latest_final_tag(self, project_name: str) -> Optional['TagData']:
         """Get the latest final tag for a given project name"""
         return GitClient._get_latest_tag(
-            origin=self._get_remote_repo(project_name),
+            origin=self._get_origin(project_name),
             find_final=True,
         )
 
-    def _get_all_repos(self, project_names: List[str]) -> List[Repository]:
-        """Get a list of all the repositories under management
+    def _get_origins(self, project_names: List[str]) -> List[Repository]:
+        """Get a list of the `origin` repos for each of the given project names
 
         http://developer.github.com/v3/repos/
         """
-        return [self._get_remote_repo(project_name) for project_name in project_names]
+        return [self._get_origin(project_name) for project_name in project_names]
 
-    def _get_remote_repo(self, project_name: str):
+    def _get_origin(self, project_name: str):
+        """Get the remote repo that a project was cloned from
+
+        Note: only a single remote, `origin`, is currently supported.
+        """
         return self.github.get_repo(project_name)
 
-    def _is_updated_since(self, repo: Repository, since_final: bool = True) -> bool:
-        """Check if the given repo has commits to develop since either the last final or pre-release"""
+    def _is_updated_since(self, origin: Repository, since_final: bool = True) -> bool:
+        """Check if the given origin has commits to develop since either the last final or pre-release"""
         return self._get_merge_count_since(
-            repo.full_name,
-            GitClient._get_latest_tag(repo, since_final)
+            origin.full_name,
+            GitClient._get_latest_tag(origin, since_final)
         ) > 0
 
-    def _get_updated_repos(self, project_names: List[str], since_final: bool = True) -> List[Repository]:
-        """Get a list of repos that have commits to develop since either the last final or pre-release
+    def _get_updated_origins(self, project_names: List[str], since_final: bool = True) -> List[Repository]:
+        """Get a list of the `origin` repos that have commits to develop since either the last final or pre-release
 
         :param since_final: if True, look for updates since the latest final tag; otherwise, since latest pre-release
         """
         return [
-            repo for repo in self._get_all_repos(project_names)
-            if self._is_updated_since(repo, since_final)
+            origin for origin in self._get_origins(project_names)
+            if self._is_updated_since(origin, since_final)
         ]
 
     def _get_merge_count_since(self, project_name: str, tag: TagData) -> int:
