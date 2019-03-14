@@ -24,6 +24,8 @@ import helpers
 
 logger = logging.getLogger(__file__)
 
+DOMAIN = 'https://github.com'
+
 
 class GitCommandError(Exception):
     """A git command has failed"""
@@ -76,7 +78,7 @@ class GitClient:
         @property
         def url(self):
             """Get the URL of the GitHub release that corresponds with the tag"""
-            return GitClient.release_url(self.project_name, self.name)
+            return f'{DOMAIN}/{self.project_name}/releases/tag/{self.name}'
 
         @property
         def date(self):
@@ -133,7 +135,7 @@ class GitClient:
         @staticmethod
         def get_compare_url(project_name: str, old_tag_name: str, new_tag_name: str) -> str:
             """Get the URL to compare two tags on GitHub"""
-            return f'https://github.com/{project_name}/compare/{old_tag_name}...{new_tag_name}'
+            return f'{DOMAIN}/{project_name}/compare/{old_tag_name}...{new_tag_name}'
 
     def __init__(self, config: dict):
         self.repos_root = config['REPOS_ROOT']
@@ -527,9 +529,4 @@ class GitClient:
         >>> GitClient._get_merged_prs_url('foo/bar-prj', '2018-01-01T22:02:39+00:00', '2018-01-02T22:02:39+00:00')[46:]
         'is:pr+is:closed+merged:2018-01-01T22:02:39+00:00..2018-01-02T22:02:39+00:00'
         """
-        return f'https://github.com/{project_name}/pulls?utf8=✓&q=is:pr+is:closed+merged:{start_date}..{end_date}'
-
-    @staticmethod
-    def release_url(project_name: str, new_version_name: str) -> str:
-        """Get the GitHub release URL"""
-        return f'https://github.com/{project_name}/releases/tag/{new_version_name}'
+        return f'{DOMAIN}/{project_name}/pulls?utf8=✓&q=is:pr+is:closed+merged:{start_date}..{end_date}'
