@@ -365,13 +365,13 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         :param stage: the release stage to transition into (seal, send, sign)
         """
         with self.git.project_git(project_name) as git:
-            final_tag_name = git.get_latest_final_tag().name
+            final_tag = git.get_latest_final_tag()
             project_key = self._get_project_key(project_name)
             new_version = self.jira.get_pending_version_name(
                 project_key,
                 stage,
-                final_tag_name,
-                git.get_latest_pre_release_tag_name(min_version=final_tag_name),
+                final_tag.name,
+                git.get_latest_pre_release_tag_name(min_version=final_tag.name),
             ) + f'.{git.get_rev_hash(ref="origin/develop")[:7]}'
             git.tag_develop(tag_name=new_version)
             return new_version
