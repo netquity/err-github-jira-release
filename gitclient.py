@@ -163,7 +163,7 @@ class GitClient:
             raise exc
 
     @contextmanager
-    def project_git(self, project_name: str):
+    def project_git(self, project_name: str) -> Generator['ProjectGit', None, None]:
         """Context wrapper to provide the project_name in a more limited scope"""
         class ProjectGit:  # pylint:disable=too-few-public-methods
             """A proxy object for marshalling calls to the underlying gitclient"""
