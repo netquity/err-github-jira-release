@@ -32,16 +32,7 @@ class GitCommandError(Exception):
 
 
 def _execute_path_git(project_root: str, git_command: list) -> CompletedProcess:
-    """Execute a git command in a specific directory
-
-    Conventions:
-        - `origin` is used to refer to the remote repo that a project was originally cloned from; there is only one per
-          repo
-        - `repo` is used to refer to the local repo that was cloned from origin
-        - Public methods are always dealing with the latest changes. For example, `get_ref` will always get the most
-          recent revision hash from the reflog; `get_merged_prs_url` will get show merged PRs since the latest final
-          release.
-    """
+    """Execute a git command in a specific directory"""
     try:
         return helpers.run_subprocess(
             ['git'] + git_command,
@@ -58,7 +49,16 @@ def _execute_path_git(project_root: str, git_command: list) -> CompletedProcess:
 
 
 class GitClient:
-    """Manage local repos and their remotes"""
+    """Manage local repos and their remotes
+
+    Conventions:
+        - `origin` is used to refer to the remote repo that a project was originally cloned from; there is only one per
+          repo
+        - `repo` is used to refer to the local repo that was cloned from origin
+        - Public methods are always dealing with the latest changes. For example, `get_ref` will always get the most
+          recent revision hash from the reflog; `get_merged_prs_url` will get show merged PRs since the latest final
+          release.
+    """
 
     class TagData:
         """A simple wrapper around `github.Tag.Tag` to provide just the details we need"""
