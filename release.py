@@ -250,7 +250,8 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         fields = ()
         updated_projects = self.git.get_updated_repo_names(self._get_project_names())
         for project_name in updated_projects:
-            try:
+            try:  # TODO: need similar try/except wherever calling bump_project_tags, but keep it DRY
+                failure_message = ''
                 new_version = self._bump_project_tags(project_name, helpers.Stages.SENT)
                 # form a field for each project formatted like:
                 # ('net-net - v10.0.0 → v11.0.0-rc.2', '<https://best-url.com|12 PRs (major)>')
@@ -265,14 +266,18 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 ),
             except helpers.InvalidStageTransitionError:
                 failure_message = f'Invalid stage transition attempted when bumping {project_name}'
-                self.log.exception(
-                    failure_message,
-                )
-                return self.send_card(
-                    in_reply_to=msg,
-                    body=failure_message,
-                    color='red',
-                )
+            except helpers.InvalidVersionNameError:
+                failure_message = f'Invalid pre_version given when bumping {project_name}'
+            finally:
+                if failure_message:
+                    self.log.exception(
+                        failure_message,
+                    )
+                    return self.send_card(  # pylint:disable=lost-exception
+                        in_reply_to=msg,
+                        body=failure_message,
+                        color='red',
+                    )
         self.send_card(  # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time
             title=str(len(updated_projects)) + ' release(s)',
             to=self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER']),
@@ -366,9 +371,10 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             new_version = self.jira.get_pending_version_name(
                 project_key,
                 stage,
+                git.get_rev_hash(ref="origin/develop")[:7],
                 final.name,
                 git.get_prerelease_tag(min_version=final).name,
-            ) + f'.{git.get_rev_hash(ref="origin/develop")[:7]}'
+            )
             git.tag_develop(tag_name=new_version)
             return new_version
 

@@ -66,17 +66,24 @@ class JiraClient:
             self,
             project_key: str,
             stage: Stages,
+            sha: str,
             final_version: str,
             pre_version: str = None,
     ) -> str:
         """Get a project's next version number, including merged, but yet unreleased, tickets
 
         :param stage: the release stage to transition into (seal, send, sign)
+        :param sha: short commit hash to append to metadata segment, usually origin/develop's HEAD
+        :param final_version: the latest final version name; the version to be upgraded (eg. 1.0.0)
+        :param pre_version: the version containing information about the current release cycle: prerelease version, rc
+                            count, stage (eg. 1.0.1-rc.5+sealed) it's possible that such a version does not yet exist,
+                            as when initiating the release sequence for the first time
         """
         from helpers import bump_version
         return bump_version(
             release_type=self.get_release_type(project_key),
             stage=stage.verb,
+            sha=sha,
             final_version=final_version[1:],  # dropping the leading `v`  TODO: do it better
             pre_version=pre_version[1:] if pre_version else None,
         )
