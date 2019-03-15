@@ -202,14 +202,14 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             except NoJIRAIssuesFoundError as exc:
                 key = self._get_project_key(project_name)
                 failure_message = (  # TODO: consider putting this information in card fields instead
-                    'Since `{latest_final}`, {project_name} '
+                    'Since `{final}`, {project_name} '
                     'had {merge_summary} '
-                    'but <{latest_jira_issues}|Jira> {exc_msg}.'
+                    'but <{jira_issues}|Jira> {exc_msg}.'
                 ).format(
-                    latest_final=self.git.get_final_tag(project_name).name,
+                    final=self.git.get_final_tag(project_name).name,
                     project_name=project_name,
                     merge_summary=self._get_merge_summary(project_name),
-                    latest_jira_issues=self.jira.get_latest_issues_url(key),
+                    jira_issues=self.jira.get_latest_issues_url(key),
                     exc_msg=str(exc)[0].lower() + str(exc)[1:],
                 )
 
@@ -255,10 +255,10 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 # form a field for each project formatted like:
                 # ('net-net - v10.0.0 → v11.0.0-rc.2', '<https://best-url.com|12 PRs (major)>')
                 fields += (
-                    '{repo_name} - {latest_final} → {latest_pre}'.format(  # field title
+                    '{repo_name} - {final} → {pre}'.format(  # field title
                         repo_name=project_name.split("/")[1],  # get rid of org name for brevity
-                        latest_final=self.git.get_final_tag(project_name).name,
-                        latest_pre=new_version,
+                        final=self.git.get_final_tag(project_name).name,
+                        pre=new_version,
                     ),
                     self._get_merge_summary(project_name)
                     + f' ({self.jira.get_release_type(self._get_project_key(project_name))})',
@@ -320,17 +320,14 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
 
     def _get_version_card(self, project_name: str) -> Dict:
         with self.git.project_git(project_name) as git:
-            tag = git.get_final_tag()
+            final = git.get_final_tag()
             project_key = self._get_project_key(project_name)
             return {
                 'Key': project_key,
                 'Release Type': self.jira.get_release_type(project_key),
 
-                'Previous Version': '<{url}|{tag}>'.format(
-                    url=tag.url,
-                    tag=tag.name,
-                ),
-                'Previous vCommit': tag.sha,
+                'Previous Version': f'<{final.url}|{final.name}>',
+                'Previous vCommit': final.sha,
 
                 'Merge Count': git.get_merge_count(),
                 # TODO: it would be nice to be able to dynamically pass in functions for fields to show up on the card
@@ -364,13 +361,13 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         :param stage: the release stage to transition into (seal, send, sign)
         """
         with self.git.project_git(project_name) as git:
-            final_tag = git.get_final_tag()
+            final = git.get_final_tag()
             project_key = self._get_project_key(project_name)
             new_version = self.jira.get_pending_version_name(
                 project_key,
                 stage,
-                final_tag.name,
-                git.get_prerelease_tag(min_version=final_tag).name,
+                final.name,
+                git.get_prerelease_tag(min_version=final).name,
             ) + f'.{git.get_rev_hash(ref="origin/develop")[:7]}'
             git.tag_develop(tag_name=new_version)
             return new_version
