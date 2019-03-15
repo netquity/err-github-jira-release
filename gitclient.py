@@ -62,6 +62,8 @@ class GitClient:
 
     class TagData:
         """A simple wrapper around `github.Tag.Tag` to provide just the details we need"""
+        __slots__ = ['_project_name', '_tag']
+
         def __init__(self, project_name: str, tag: Tag):
             if not isinstance(tag, Tag):
                 raise ValueError(
@@ -141,6 +143,8 @@ class GitClient:
             """
             from semver import match
             return match(old_tag_name[1:], f"<{new_tag_name[1:]}")
+
+    __slots__ = ['repos_root', 'project_names', 'github']
 
     def __init__(self, config: dict):
         self.repos_root = config['REPOS_ROOT']
