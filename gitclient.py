@@ -166,13 +166,13 @@ class GitClient:
     def project_git(self, project_name: str) -> Generator['ProjectGit', None, None]:
         """Context wrapper to provide the project_name in a more limited scope"""
         class ProjectGit:  # pylint:disable=too-few-public-methods
-            """A proxy object for marshalling calls to the underlying gitclient"""
+            """A proxy object for marshalling calls to the underlying GitClient"""
             def __init__(self, project_name: str, git: GitClient):
                 self._project_name = project_name
                 self._git = git
 
             def __getattribute__(self, name: str):
-                """Intercept calls to gitclient methods and project_name argument if the target method neets it"""
+                """Intercept calls to GitClient methods and add project_name argument if the target method neets it"""
                 if name in ['_git', '_project_name']:
                     return super(ProjectGit, self).__getattribute__(name)
                 method = self._git.__getattribute__(name)
