@@ -142,11 +142,6 @@ class GitClient:
             from semver import match
             return match(old_tag_name[1:], f"<{new_tag_name[1:]}")
 
-        @staticmethod
-        def get_compare_url(project_name: str, old_tag_name: str, new_tag_name: str) -> str:
-            """Get the URL to compare two tags on GitHub"""
-            return f'{DOMAIN}/{project_name}/compare/{old_tag_name}...{new_tag_name}'
-
     def __init__(self, config: dict):
         self.repos_root = config['REPOS_ROOT']
         self.project_names = config['PROJECT_NAMES']
@@ -348,31 +343,30 @@ class GitClient:
             ),
         )
 
-    def get_prerelease_tag_name(self, project_name: str, min_version: str = None) -> Optional[str]:
+    def get_prerelease_tag(self, project_name: str, min_version: Optional[TagData] = None) -> Optional['TagData']:
         """Get the latest prerelease tag name
 
         :param min_version: if included, will ignore all versions below this one
         :return: either the version string of the latest prerelease tag or `None` if one wasn't found
         """
         try:
-            latest_pre_tag = GitClient._get_latest_tag(self._get_origin(project_name), False).name
+            pre_tag = GitClient._get_latest_tag(self._get_origin(project_name), find_final=False)
             if not min_version:
-                return latest_pre_tag
+                return pre_tag
         except AttributeError:
             return None
-        return latest_pre_tag if GitClient.TagData.is_older_name(min_version, latest_pre_tag) else None
+        return pre_tag if GitClient.TagData.is_older_name(min_version.name, pre_tag.name) else None
 
     def get_compare_url(self, project_name: str) -> str:
         """Get the URL to compare the latest final with the latest prerelease on GitHub"""
-        latest_final = self.get_final_tag(project_name).name
-        return self.TagData.get_compare_url(
-            project_name,
-            old_tag_name=latest_final,
-            new_tag_name=self.get_prerelease_tag_name(
+        final = self.get_final_tag(project_name)
+        return self._get_origin(project_name).compare(
+            base=final.name,
+            head=self.get_prerelease_tag(
                 project_name,
-                min_version=latest_final,
-            )
-        )
+                min_version=final,
+            ).name,
+        ).html_url
 
     def get_merged_prs_url(self, project_name: str) -> str:
         """Get the URL to see merged PRs since the latest final on GitHub"""
