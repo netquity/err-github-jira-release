@@ -65,8 +65,8 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
 
         self._setup_repos()
         super().activate()
-        self.jira = JiraClient(self._get_jira_config())
-        self.git = GitClient(self._get_git_config())
+        self.jira = JiraClient(self._get_jira_config())  # pylint:disable=attribute-defined-outside-init
+        self.git = GitClient(self._get_git_config())  # pylint:disable=attribute-defined-outside-init
 
     def get_configuration_template(self) -> str:
         return {

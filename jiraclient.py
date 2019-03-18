@@ -6,6 +6,8 @@ to provide release-management capabilities and nothing more.
 import datetime
 import logging
 
+from typing import Optional
+
 from jinja2 import Environment, FileSystemLoader
 
 from helpers import Stages
@@ -163,7 +165,7 @@ class JiraClient:
             version_id=version_id,
         )
 
-    def set_fix_version(self, project_key: str, new_version: str, is_hotfix: bool = False):
+    def set_fix_version(self, project_key: str, new_version: str, is_hotfix: bool = False) -> None:
         """Set the fixVersion on all of the closed tickets without one."""
         # TODO: exceptions
         for issue in self.api.search_issues(
@@ -190,17 +192,17 @@ class JiraClient:
         return self.api.create_version(
             new_version,
             project=project_key.upper(),
-            released=True,
+            released=released,
             releaseDate=datetime.datetime.now().date().isoformat(),
         )
 
     @staticmethod
-    def delete_version(project_key: str, version: Version, failed_command: str = 'JIRA'):
+    def delete_version(project_key: str, version: Version, failed_command: str = 'JIRA') -> Optional[str]:
         """Delete a JIRA version.
 
         Used to undo created versions when subsequent operations fail."""
         try:
-            version.delete()  # Remove version from issues it's attached to
+            return version.delete()  # Remove version from issues it's attached to
         except JIRAError:
             exc_message = (
                 'Unable to complete JIRA request for project_key={} and unable to clean up new version={}'.format(
