@@ -194,7 +194,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             # TODO: wrap in a try/except and roll back repos on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
             try:
-                new_version = self._bump_project_tags(project_name, helpers.Stages.SEALED)
+                new_version = self._bump_repo_tags(project_name, helpers.Stages.SEALED)
                 card_dict[project_name] = dict(
                     self._get_version_card(project_name),
                     **{'New Version Name': new_version}
@@ -252,7 +252,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         for project_name in updated_projects:
             try:  # TODO: need similar try/except wherever calling bump_project_tags, but keep it DRY
                 failure_message = ''
-                new_version = self._bump_project_tags(project_name, helpers.Stages.SENT)
+                new_version = self._bump_repo_tags(project_name, helpers.Stages.SENT)
                 # form a field for each project formatted like:
                 # ('net-net - v10.0.0 → v11.0.0-rc.2', '<https://best-url.com|12 PRs (major)>')
                 fields += (
@@ -360,7 +360,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             color='green',
         )
 
-    def _bump_project_tags(self, project_name: str, stage: str) -> str:
+    def _bump_repo_tags(self, project_name: str, stage: str) -> str:
         """Tag the project's repo with the next version's tags and push to origin
 
         :param stage: the release stage to transition into (seal, send, sign)
