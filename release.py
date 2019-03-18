@@ -286,6 +286,62 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         )
         return "I have sent your sealed version set to the UAT channel. Awaiting their approval."
 
+    @botcmd
+    def sign(self, msg: Message, args):
+        from gitclient import GitCommandError
+        fields = ()
+        updated_projects = self.git.get_updated_repo_names(self._get_project_names())
+        for project_name in updated_projects:
+            with self.git.project_git(project_name) as git:
+                key = self._get_project_key(project_name)
+                final = git.get_final_tag()
+                # new_version_name = self._bump_repo_tags(project_name, helpers.Stages.SIGNED)  # NOTE: comes with no `v`
+                new_version_name = self.jira.get_pending_version_name(
+                    key,
+                    helpers.Stages.SIGNED,
+                    git.get_rev_hash(ref="origin/develop")[:7],
+                    final.name,
+                    git.get_prerelease_tag(min_version=final).name,
+                )
+                jira_version = self.jira.create_version(
+                    key,
+                    new_version_name,
+                    released=True,
+                )
+                self.jira.set_fix_version(
+                    key,
+                    jira_version.name,
+                    is_hotfix=False,  # FIXME: need to actually do something for hotfixes
+                )
+                release_notes = self.jira.get_release_notes(jira_version)
+                is_hotfix = False  # TODO: TEMPORARY SHIM; REMOVE!!!
+                try:
+                    if is_hotfix:
+                        # TODO: need better exception handling
+                        git.add_release_notes_to_develop(new_version_name, release_notes)
+                    else:
+                        # FIXME: need to get THIS sha, not the one of most recent commit earlier
+                        git.merge_and_create_release_commit(
+                            new_version_name=new_version_name,
+                            release_notes=release_notes,
+                        )
+                except GitCommandError as exc:  # TODO: should the exception be changed to GitCommandError?
+                    self.log.exception(
+                        'Unable to merge release branch to master and create release commit.'
+                    )
+                    exc_message = JiraClient.delete_version(
+                        key,
+                        jira_version,
+                        'git',
+                    )
+                    return exc_message
+
+                git.create_tag(tag_name=new_version_name)
+                git.create_ref(new_version_name=new_version_name)  # FIXME: reference already exists?
+                git.create_release(release_notes=release_notes, new_version_name=new_version_name)
+                if not is_hotfix:
+                    git.update_develop()
+
     def _get_merge_summary(self, project_name: str) -> str:
         """Return a link to GitHub's issue search showing the merged PRs """
         return '<{url}|{pr_count} merged PR(s)>'.format(

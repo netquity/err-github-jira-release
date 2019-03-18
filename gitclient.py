@@ -249,10 +249,7 @@ class GitClient:
             ['rev-parse', ref]
         ).stdout.strip()  # Get rid of the newline character at the end
 
-    def merge_and_create_release_commit(
-            self, project_name: str, new_version_name: str,
-            release_notes: str, changelog_path: str
-    ) -> None:
+    def merge_and_create_release_commit(self, project_name: str, new_version_name: str, release_notes: str) -> None:
         """Create a release commit based on origin/develop and merge it to master"""
         with self._gcmd(project_name) as gcmd:
             for git_command in [
@@ -262,6 +259,9 @@ class GitClient:
             ]:
                 gcmd(git_command)
 
+            changelog_path = os.path.join(
+                self._get_project_root(project_name), 'CHANGELOG.md',
+            )
             helpers.update_changelog_file(
                 changelog_path,
                 release_notes,
@@ -272,7 +272,7 @@ class GitClient:
                     ['add', changelog_path],
                     ['commit', '-m', f'Release {new_version_name}'],
                     ['checkout', '-B', 'master', 'origin/master'],
-                    ['merge', '--no-ff', '--no-edit', 'release-{new_version_name}'],
+                    ['merge', '--no-ff', '--no-edit', f'release-{new_version_name}'],
                     ['push', 'origin', 'master'],
             ]:
                 gcmd(git_command)

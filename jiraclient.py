@@ -185,7 +185,7 @@ class JiraClient:
 
             self.api.transition_issue(issue, 'Close Issue')
 
-    def create_version(self, project_key: str, new_version: str) -> Version:
+    def create_version(self, project_key: str, new_version: str, released: bool = False) -> Version:
         """Create a Jira version, applying the appropriate version bump"""
         return self.api.create_version(
             new_version,
