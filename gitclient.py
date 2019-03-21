@@ -127,8 +127,8 @@ class GitClient:
         def is_older_name(old_tag_name: str, new_tag_name: str) -> bool:
             """Compare two version strings to determine if one is newer than the other
 
-            :param old_version: version string expected to be sorted before the new_version
-            :param new_version: version string expected to be sorted after the old_string
+            :param old_tag_name: version string expected to be sorted before the new_tag_name
+            :param new_tag_name: version string expected to be sorted after the old_tag_name
             :return: True if expectations are correct and False otherwise
             >>> GitClient.TagData.is_older_name('v1.0.0', 'v2.0.0')
             True
