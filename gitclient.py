@@ -433,11 +433,16 @@ class GitClient:
 
     def _get_merge_count_since(self, project_name: str, tag: TagData) -> int:
         """Get the number of merges to develop since the given tag"""
+        # The first result will be the merge commit from last release
+        return len(self._get_merges_since(project_name, tag,)) - 1
+
+    def _get_merges_since(self, project_name: str, tag: TagData, *flags: List[str]) -> List[str]:
+        """Get the git log entries to develop since the given tag"""
         # FIXME: assumes master and developed have not diverged, which is not a safe assumption at all
-        return len(self._execute_project_git(
+        return self._execute_project_git(
             project_name,
-            ['log', f'{tag.name}...origin/develop', '--merges', '--oneline', ]
-        ).stdout.splitlines()) - 1  # The first result will be the merge commit from last release
+            ['log', f'{tag.name}...origin/develop', '--merges', '--oneline', *flags]
+        ).stdout.replace('"', '').splitlines()
 
     def _backup_repo(self, project_name: str) -> str:
         """Create a backup of the entire local repo folder and return the destination
