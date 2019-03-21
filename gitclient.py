@@ -216,7 +216,7 @@ class GitClient:
         https://developer.github.com/v3/git/refs/#create-a-reference
         """
         self._get_origin(project_name).create_git_ref(
-            f'refs/tags/v{new_version_name}',
+            f'refs/tags/{new_version_name}',
             self.get_rev_hash(project_name, ref),  # TODO: this will have to be something else for hotfixes
         )
 
@@ -226,7 +226,7 @@ class GitClient:
         https://developer.github.com/v3/repos/releases/#create-a-release
         """
         self._get_origin(project_name).create_git_release(
-            tag=f'v{new_version_name}',
+            tag=new_version_name,
             name=f'{project_name} - Version {new_version_name}',
             message=release_notes,
             draft=False,
