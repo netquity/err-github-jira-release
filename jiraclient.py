@@ -196,6 +196,10 @@ class JiraClient:
             releaseDate=datetime.datetime.now().date().isoformat(),
         )
 
+    def change_version_name(self, version: Version, new_name: str) -> Version:
+        """Change the Jira version's name"""
+        return version.update(name=new_name)
+
     @staticmethod
     def delete_version(project_key: str, version: Version, failed_command: str = 'JIRA') -> Optional[str]:
         """Delete a JIRA version.
