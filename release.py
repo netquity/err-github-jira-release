@@ -322,7 +322,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     else:
                         # FIXME: need to get THIS sha, not the one of most recent commit earlier
                         git.merge_and_create_release_commit(
-                            new_version_name=new_version_name,
+                            version_name=new_version_name,
                             release_notes=release_notes,
                         )
                 except GitCommandError as exc:  # TODO: should the exception be changed to GitCommandError?
@@ -340,8 +340,8 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 new_version_name = helpers.change_sha(new_version_name, git.get_ref()[:7])
                 self.jira.change_version_name(jira_version, new_version_name)
                 git.create_tag(tag_name=new_version_name)
-                git.create_ref(new_version_name=new_version_name)
-                git.create_release(release_notes=release_notes, new_version_name=new_version_name)
+                git.create_ref(version_name=new_version_name)
+                git.create_release(release_notes=release_notes, version_name=new_version_name)
                 if not is_hotfix:
                     git.update_develop()
 

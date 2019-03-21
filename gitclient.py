@@ -210,24 +210,24 @@ class GitClient:
             ['tag', '-s', tag_name, '-m', tag_name, ]
         )
 
-    def create_ref(self, project_name: str, new_version_name: str, ref: str = 'master') -> None:
+    def create_ref(self, project_name: str, version_name: str, ref: str = 'master') -> None:
         """Create a ref and push it to origin
 
         https://developer.github.com/v3/git/refs/#create-a-reference
         """
         self._get_origin(project_name).create_git_ref(
-            f'refs/tags/{new_version_name}',
+            f'refs/tags/{version_name}',
             self.get_rev_hash(project_name, ref),  # TODO: this will have to be something else for hotfixes
         )
 
-    def create_release(self, project_name: str, release_notes: str, new_version_name: str):
+    def create_release(self, project_name: str, release_notes: str, version_name: str):
         """Create a GitHub release object and push it origin
 
         https://developer.github.com/v3/repos/releases/#create-a-release
         """
         self._get_origin(project_name).create_git_release(
-            tag=new_version_name,
-            name=f'{project_name} - Version {new_version_name}',
+            tag=version_name,
+            name=f'{project_name} - Version {version_name}',
             message=release_notes,
             draft=False,
             prerelease=False,
@@ -250,13 +250,13 @@ class GitClient:
             ['rev-parse', ref]
         ).stdout.strip()  # Get rid of the newline character at the end
 
-    def merge_and_create_release_commit(self, project_name: str, new_version_name: str, release_notes: str) -> None:
+    def merge_and_create_release_commit(self, project_name: str, version_name: str, release_notes: str) -> None:
         """Create a release commit based on origin/develop and merge it to master"""
         with self._gcmd(project_name) as gcmd:
             for git_command in [
                     # TODO: deal with merge conflicts in an interactive way
                     ['fetch', '-p'],
-                    ['checkout', '-B', f'release-{new_version_name}', 'origin/develop'],
+                    ['checkout', '-B', f'release-{version_name}', 'origin/develop'],
             ]:
                 gcmd(git_command)
 
@@ -271,9 +271,9 @@ class GitClient:
 
             for git_command in [
                     ['add', changelog_path],
-                    ['commit', '-m', f'Release {new_version_name}'],
+                    ['commit', '-m', f'Release {version_name}'],
                     ['checkout', '-B', 'master', 'origin/master'],
-                    ['merge', '--no-ff', '--no-edit', f'release-{new_version_name}'],
+                    ['merge', '--no-ff', '--no-edit', f'release-{version_name}'],
                     ['push', 'origin', 'master'],
             ]:
                 gcmd(git_command)
@@ -298,7 +298,7 @@ class GitClient:
             ]:
                 gcmd(git_command)
 
-    def add_release_notes_to_develop(self, project_name: str, new_version_name: str, release_notes: str) -> str:
+    def add_release_notes_to_develop(self, project_name: str, version_name: str, release_notes: str) -> str:
         """Wrap subprocess calls with some project-specific defaults.
 
         :return: Release commit hash.
@@ -319,7 +319,7 @@ class GitClient:
             for git_command in [
                     ['add', changelog_path],
                     # FIXME: make sure version number doesn't have `hotfix` in it, or does... just make it consistent
-                    ['commit', '-m', f'Hotfix {new_version_name}'],
+                    ['commit', '-m', f'Hotfix {version_name}'],
                     ['push', 'origin', 'develop'],
             ]:
                 gcmd(git_command)
