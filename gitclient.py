@@ -64,20 +64,20 @@ class GitClient:
 
     class TagData:
         """A simple wrapper around `github.Tag.Tag` to provide just the details we need"""
-        __slots__ = ['_project_name', '_tag']
+        __slots__ = ['_project', '_tag']
 
-        def __init__(self, project_name: str, tag: Tag):
+        def __init__(self, project: str, tag: Tag):
             if not isinstance(tag, Tag):
                 raise ValueError(
                     f'Inappropriate type: `tag` argument must be of type `github.Tag.Tag` but got `{type(tag)}`'
                 )
-            self._project_name = project_name
+            self._project = project
             self._tag = tag
 
         @property
-        def project_name(self):
+        def project(self):
             """Get the name of the project this tag belongs to"""
-            return self._project_name
+            return self._project
 
         @property
         def name(self):
@@ -92,7 +92,7 @@ class GitClient:
         @property
         def url(self):
             """Get the URL of the GitHub release that corresponds with the tag"""
-            return f'{DOMAIN}/{self.project_name}/releases/tag/{self.name}'
+            return f'{DOMAIN}/{self.project}/releases/tag/{self.name}'
 
         @property
         def date(self):
@@ -146,113 +146,113 @@ class GitClient:
             from semver import match
             return match(old_tag_name[1:], f"<{new_tag_name[1:]}")
 
-    __slots__ = ['repos_root', 'project_names', 'github']
+    __slots__ = ['repos_root', 'projects', 'github']
 
     def __init__(self, config: dict):
         self.repos_root = config['REPOS_ROOT']
-        self.project_names = config['PROJECT_NAMES']
+        self.projects = config['PROJECT_NAMES']
         self.github = Github(config['GITHUB_TOKEN'])
 
     @contextmanager
-    def _gcmd(self, project_name: str) -> Generator[CompletedProcess, None, None]:
+    def _gcmd(self, project: str) -> Generator[CompletedProcess, None, None]:
         """A context manager for interacting with local git repos in a safer way
 
         Records reflog position before doing anything and resets to this position if any of the git commands fail.
         """
-        initial_ref = self.get_ref(project_name)
-        backup_path = self._backup_repo(project_name)
+        initial_ref = self.get_ref(project)
+        backup_path = self._backup_repo(project)
         try:
-            yield lambda cmd: self._execute_project_git(project_name, cmd)
+            yield lambda cmd: self._execute_project_git(project, cmd)
         except GitCommandError as exc:
-            self._restore_repo(project_name, backup_path)
-            logger.error('%s: git commands failed; repo backup %s restored', project_name, initial_ref)
+            self._restore_repo(project, backup_path)
+            logger.error('%s: git commands failed; repo backup %s restored', project, initial_ref)
             raise exc
 
     @contextmanager
-    def project_git(self, project_name: str) -> Generator['ProjectGit', None, None]:
-        """Context wrapper to provide the project_name in a more limited scope"""
+    def project_git(self, project: str) -> Generator['ProjectGit', None, None]:
+        """Context wrapper to provide the project in a more limited scope"""
         class ProjectGit:  # pylint:disable=too-few-public-methods
             """A proxy object for marshalling calls to the underlying GitClient"""
-            def __init__(self, project_name: str, git: GitClient):
-                self._project_name = project_name
+            def __init__(self, project: str, git: GitClient):
+                self._project = project
                 self._git = git
 
             def __getattribute__(self, name: str):
-                """Intercept calls to GitClient methods and add project_name argument if the target method neets it"""
-                if name in ['_git', '_project_name']:
+                """Intercept calls to GitClient methods and add project argument if the target method neets it"""
+                if name in ['_git', '_project']:
                     return super(ProjectGit, self).__getattribute__(name)
                 method = self._git.__getattribute__(name)
-                if 'project_name' not in getfullargspec(method).args:
+                if 'project' not in getfullargspec(method).args:
                     return method
-                return partial(method, project_name=self._project_name)
+                return partial(method, project=self._project)
 
-        yield ProjectGit(project_name, self)
+        yield ProjectGit(project, self)
 
-    def get_ref(self, project_name: str) -> str:
+    def get_ref(self, project: str) -> str:
         """Get the latest rev hash from reflog"""
         return self._execute_project_git(
-            project_name,
+            project,
             ['reflog', 'show', '--format=%H', '-1']
         ).stdout.splitlines()[0]
 
-    def clean(self, project_name: str) -> CompletedProcess:
+    def clean(self, project: str) -> CompletedProcess:
         """Recursively remove files that aren't under source control"""
-        return self._execute_project_git(self._get_project_root(project_name), ['clean', '-f'])
+        return self._execute_project_git(self._get_project_root(project), ['clean', '-f'])
 
-    def reset_hard(self, project_name: str, ref: str) -> CompletedProcess:
+    def reset_hard(self, project: str, ref: str) -> CompletedProcess:
         """Do a hard reset on a repo to a target ref"""
-        return self._execute_project_git(self._get_project_root(project_name), ['reset', '--hard', ref])
+        return self._execute_project_git(self._get_project_root(project), ['reset', '--hard', ref])
 
-    def create_tag(self, project_name: str, tag_name: str) -> None:  # TODO: return TagData
+    def create_tag(self, project: str, tag_name: str) -> None:  # TODO: return TagData
         """Create a git tag on whatever commit HEAD is pointing at"""
         self._execute_project_git(
-            project_name,
+            project,
             ['tag', '-s', tag_name, '-m', tag_name, ]
         )
 
-    def create_ref(self, project_name: str, version_name: str, ref: str = 'master') -> None:
+    def create_ref(self, project: str, version_name: str, ref: str = 'master') -> None:
         """Create a ref and push it to origin
 
         https://developer.github.com/v3/git/refs/#create-a-reference
         """
-        self._get_origin(project_name).create_git_ref(
+        self._get_origin(project).create_git_ref(
             f'refs/tags/{version_name}',
-            self.get_rev_hash(project_name, ref),  # TODO: this will have to be something else for hotfixes
+            self.get_rev_hash(project, ref),  # TODO: this will have to be something else for hotfixes
         )
 
-    def create_release(self, project_name: str, release_notes: str, version_name: str):
+    def create_release(self, project: str, release_notes: str, version_name: str):
         """Create a GitHub release object and push it origin
 
         https://developer.github.com/v3/repos/releases/#create-a-release
         """
-        self._get_origin(project_name).create_git_release(
+        self._get_origin(project).create_git_release(
             tag=version_name,
-            name=f'{project_name} - Version {version_name}',
+            name=f'{project} - Version {version_name}',
             message=release_notes,
             draft=False,
             prerelease=False,
         )
 
-    def tag_develop(self, project_name: str, tag_name: str) -> None:
+    def tag_develop(self, project: str, tag_name: str) -> None:
         """Compound check, tag, ref creation and pushing it all to origin
 
-        :param project_name:
+        :param project:
         :param tag_name: the new tag to apply to develop's HEAD
         """
-        self.checkout_latest(project_name, 'develop')
-        self.create_tag(project_name, tag_name)
-        self.create_ref(project_name, tag_name, 'develop')
+        self.checkout_latest(project, 'develop')
+        self.create_tag(project, tag_name)
+        self.create_ref(project, tag_name, 'develop')
 
-    def get_rev_hash(self, project_name: str, ref: str) -> str:
+    def get_rev_hash(self, project: str, ref: str) -> str:
         """Get the SHA1 hash of a particular git ref"""
         return self._execute_project_git(
-            project_name,
+            project,
             ['rev-parse', ref]
         ).stdout.strip()  # Get rid of the newline character at the end
 
-    def merge_and_create_release_commit(self, project_name: str, version_name: str, release_notes: str) -> None:
+    def merge_and_create_release_commit(self, project: str, version_name: str, release_notes: str) -> None:
         """Create a release commit based on origin/develop and merge it to master"""
-        with self._gcmd(project_name) as gcmd:
+        with self._gcmd(project) as gcmd:
             for git_command in [
                     # TODO: deal with merge conflicts in an interactive way
                     ['fetch', '-p'],
@@ -261,7 +261,7 @@ class GitClient:
                 gcmd(git_command)
 
             changelog_path = os.path.join(
-                self._get_project_root(project_name), 'CHANGELOG.md',
+                self._get_project_root(project), 'CHANGELOG.md',
             )
             helpers.update_changelog_file(
                 changelog_path,
@@ -278,9 +278,9 @@ class GitClient:
             ]:
                 gcmd(git_command)
 
-    def update_develop(self, project_name: str) -> None:
+    def update_develop(self, project: str) -> None:
         """Merge master branch to develop"""
-        with self._gcmd(project_name) as gcmd:
+        with self._gcmd(project) as gcmd:
             for git_command in [
                     ['fetch', '-p'],
                     ['checkout', '-B', 'develop', 'origin/develop'],
@@ -289,21 +289,21 @@ class GitClient:
             ]:
                 gcmd(git_command)
 
-    def checkout_latest(self, project_name: str, ref: str) -> None:
+    def checkout_latest(self, project: str, ref: str) -> None:
         """Check out the latest version of develop for the given project"""
-        with self._gcmd(project_name) as gcmd:
+        with self._gcmd(project) as gcmd:
             for git_command in [
                     ['fetch', '--prune', '--force', '--tags'],
                     ['checkout', '-B', ref, f'origin/{ref}'],
             ]:
                 gcmd(git_command)
 
-    def add_release_notes_to_develop(self, project_name: str, version_name: str, release_notes: str) -> str:
+    def add_release_notes_to_develop(self, project: str, version_name: str, release_notes: str) -> str:
         """Wrap subprocess calls with some project-specific defaults.
 
         :return: Release commit hash.
         """
-        with self._gcmd(project_name) as gcmd:
+        with self._gcmd(project) as gcmd:
             for git_command in [
                     # TODO: deal with merge conflicts in an interactive way
                     ['fetch', '-p'],
@@ -312,7 +312,7 @@ class GitClient:
                 gcmd(git_command)
 
                 changelog_path = os.path.join(
-                    self._get_project_root(project_name), 'CHANGELOG.md',
+                    self._get_project_root(project), 'CHANGELOG.md',
                 )
                 helpers.update_changelog_file(changelog_path, release_notes, logger)
 
@@ -324,9 +324,9 @@ class GitClient:
             ]:
                 gcmd(git_command)
 
-        return self.get_rev_hash(project_name, 'develop')
+        return self.get_rev_hash(project, 'develop')
 
-    def get_updated_repo_names(self, project_names: List[str], since_final: bool = True) -> List[str]:
+    def get_updated_repo_names(self, projects: List[str], since_final: bool = True) -> List[str]:
         """
         Get a list of the full names of the repos that have commits to develop since either the last final or
         prerelease
@@ -336,14 +336,14 @@ class GitClient:
 
         :param since_final: if True, look for updates since the latest final tag; otherwise, since latest prerelease
         """
-        return [project.full_name for project in self._get_updated_origins(project_names, since_final)]
+        return [project.full_name for project in self._get_updated_origins(projects, since_final)]
 
-    def get_merge_logs(self, project_name) -> List[MergeLog]:
+    def get_merge_logs(self, project: str) -> List[MergeLog]:
         """Get a list of namedtuples containing each merged PR, its Jira Key, and short SHA"""
         merges = []
         for log in self._get_merges_since(
-                project_name,
-                self.get_final_tag(project_name),
+                project,
+                self.get_final_tag(project),
                 '--pretty="%h %s"', "-1",
         ):
             sha, msg = log.split(' ', maxsplit=1)
@@ -353,89 +353,89 @@ class GitClient:
             except IndexError:  # just ignoring messages that don't fit the format
                 logger.warning(
                     '%s: unexpected git log message format: "%s"; %s merge ignored from list',
-                    project_name,
+                    project,
                     msg, sha,
                 )
             merges.append(MergeLog(key, sha))
         return merges
 
 
-    def get_merge_count(self, project_name: str) -> int:
+    def get_merge_count(self, project: str) -> int:
         """Get the number of merges to develop since the last final tag"""
         return self._get_merge_count_since(
-            project_name,
+            project,
             GitClient._get_latest_tag(
-                origin=self._get_origin(project_name),
+                origin=self._get_origin(project),
                 find_final=True,
             ),
         )
 
-    def get_prerelease_tag(self, project_name: str, min_version: Optional[TagData] = None) -> Optional['TagData']:
+    def get_prerelease_tag(self, project: str, min_version: Optional[TagData] = None) -> Optional['TagData']:
         """Get the latest prerelease tag name
 
         :param min_version: if included, will ignore all versions below this one
         :return: either the version string of the latest prerelease tag or `None` if one wasn't found
         """
         try:
-            pre_tag = GitClient._get_latest_tag(self._get_origin(project_name), find_final=False)
+            pre_tag = GitClient._get_latest_tag(self._get_origin(project), find_final=False)
             if not min_version:
                 return pre_tag
         except AttributeError:
             return None
         return pre_tag if GitClient.TagData.is_older_name(min_version.name, pre_tag.name) else None
 
-    def get_compare_url(self, project_name: str) -> str:
+    def get_compare_url(self, project: str) -> str:
         """Get the URL to compare the latest final with the latest prerelease on GitHub"""
-        final = self.get_final_tag(project_name)
-        return self._get_origin(project_name).compare(
+        final = self.get_final_tag(project)
+        return self._get_origin(project).compare(
             base=final.name,
             head=self.get_prerelease_tag(
-                project_name,
+                project,
                 min_version=final,
             ).name,
         ).html_url
 
-    def get_merged_prs_url(self, project_name: str) -> str:
+    def get_merged_prs_url(self, project: str) -> str:
         """Get the URL to see merged PRs since the latest final on GitHub"""
-        start_date = GitClient._parse_github_datetime(self.get_final_tag(project_name).date)
+        start_date = GitClient._parse_github_datetime(self.get_final_tag(project).date)
         return GitClient._get_merged_prs_url(
-            project_name,
+            project,
             start_date.isoformat(),  # TODO: timezone?
             datetime.now(timezone.utc).replace(microsecond=0).isoformat().split('+')[0],
         )
 
     # TODO: this is very Django specific, figure out less opinionated way for non-Django users
-    def get_migration_count(self, project_name: str) -> int:
+    def get_migration_count(self, project: str) -> int:
         """Get the number of new migration files since the latest final"""
-        tag_name = self.get_final_tag(project_name).name
+        tag_name = self.get_final_tag(project).name
         return len(self._execute_project_git(
-            project_name,
+            project,
             [
                 'diff', '--name-status', '--diff-filter=A',
                 f'HEAD..{tag_name}', '--', 'src/**/migrations/',
             ]
         ).stdout.strip().splitlines())
 
-    def get_final_tag(self, project_name: str) -> Optional['TagData']:
+    def get_final_tag(self, project: str) -> Optional['TagData']:
         """Get the latest final tag for a given project name"""
         return GitClient._get_latest_tag(
-            origin=self._get_origin(project_name),
+            origin=self._get_origin(project),
             find_final=True,
         )
 
-    def _get_origins(self, project_names: List[str]) -> List[Repository]:
+    def _get_origins(self, projects: List[str]) -> List[Repository]:
         """Get a list of the `origin` repos for each of the given project names
 
         http://developer.github.com/v3/repos/
         """
-        return [self._get_origin(project_name) for project_name in project_names]
+        return [self._get_origin(project) for project in projects]
 
-    def _get_origin(self, project_name: str):
+    def _get_origin(self, project: str):
         """Get the remote repo that a project was cloned from
 
         Note: only a single remote, `origin`, is currently supported.
         """
-        return self.github.get_repo(project_name)
+        return self.github.get_repo(project)
 
     def _is_updated_since(self, origin: Repository, since_final: bool = True) -> bool:
         """Check if the given origin has commits to develop since either the last final or prerelease"""
@@ -444,43 +444,43 @@ class GitClient:
             GitClient._get_latest_tag(origin, since_final)
         ) > 0
 
-    def _get_updated_origins(self, project_names: List[str], since_final: bool = True) -> List[Repository]:
+    def _get_updated_origins(self, projects: List[str], since_final: bool = True) -> List[Repository]:
         """Get a list of the `origin` repos that have commits to develop since either the last final or prerelease
 
         :param since_final: if True, look for updates since the latest final tag; otherwise, since latest prerelease
         """
         return [
-            origin for origin in self._get_origins(project_names)
+            origin for origin in self._get_origins(projects)
             if self._is_updated_since(origin, since_final)
         ]
 
-    def _get_merge_count_since(self, project_name: str, tag: TagData) -> int:
+    def _get_merge_count_since(self, project: str, tag: TagData) -> int:
         """Get the number of merges to develop since the given tag"""
         # The first result will be the merge commit from last release
-        return len(self._get_merges_since(project_name, tag,)) - 1
+        return len(self._get_merges_since(project, tag,)) - 1
 
-    def _get_merges_since(self, project_name: str, tag: TagData, *flags: List[str]) -> List[str]:
+    def _get_merges_since(self, project: str, tag: TagData, *flags: List[str]) -> List[str]:
         """Get the git log entries to develop since the given tag"""
         # FIXME: assumes master and developed have not diverged, which is not a safe assumption at all
         return self._execute_project_git(
-            project_name,
+            project,
             ['log', f'{tag.name}...origin/develop', '--merges', '--oneline', *flags]
         ).stdout.replace('"', '').splitlines()
 
-    def _backup_repo(self, project_name: str) -> str:
+    def _backup_repo(self, project: str) -> str:
         """Create a backup of the entire local repo folder and return the destination
 
         :return: the dst path
         """
         # TODO: maybe it would be better to back up the whole repos root, instead of individual repos
-        ref = self.get_ref(project_name)[:7]
+        ref = self.get_ref(project)[:7]
         return helpers.copytree(
-            self._get_project_root(project_name),
-            self._get_backups_path(project_name),
+            self._get_project_root(project),
+            self._get_backups_path(project),
             ref,
         )
 
-    def _restore_repo(self, project_name: str, backup_path: str) -> str:
+    def _restore_repo(self, project: str, backup_path: str) -> str:
         """Restore a repo backup directory to its original location
 
         :param backup_path: absolute path to the backup's root as returned by `_backup_repo()`
@@ -488,28 +488,28 @@ class GitClient:
         # create a backup of the backup so it can be moved using the atomic `shutil.move`
         backup_swap = helpers.copytree(
             src=backup_path,
-            dst_parent=self._get_backups_path(project_name),
-            dst=self.get_ref(project_name)[:7] + '.swap',
+            dst_parent=self._get_backups_path(project),
+            dst=self.get_ref(project)[:7] + '.swap',
         )
         # move the backup to the normal repo location
-        project_root = self._get_project_root(project_name)
+        project_root = self._get_project_root(project)
         shutil.rmtree(project_root)
         return shutil.move(src=backup_swap, dst=project_root)
 
-    def _get_backups_path(self, project_name: str = None) -> str:
+    def _get_backups_path(self, project: str = None) -> str:
         """Get the backups dir path, either for all projects, or for the given project name"""
         return os.path.join(
             *[self.repos_root, '.backups']
-            + ([project_name] if project_name else [])
+            + ([project] if project else [])
         )
 
-    def _execute_project_git(self, project_name: str, git_command: list) -> CompletedProcess:
+    def _execute_project_git(self, project: str, git_command: list) -> CompletedProcess:
         """Simple wrapper for executing git commands by project name"""
-        return _execute_path_git(self._get_project_root(project_name), git_command)
+        return _execute_path_git(self._get_project_root(project), git_command)
 
-    def _get_project_root(self, project_name: str) -> str:
+    def _get_project_root(self, project: str) -> str:
         """Get the full path to the project root"""
-        return os.path.join(self.repos_root, project_name)
+        return os.path.join(self.repos_root, project)
 
     @classmethod
     def _get_latest_tag(cls, origin: Repository, find_final: bool = True) -> Optional['TagData']:
@@ -561,7 +561,7 @@ class GitClient:
         return datetime.strptime(dt, '%a, %d %b %Y %H:%M:%S %Z')
 
     @staticmethod
-    def _get_merged_prs_url(project_name: str, start_date: str, end_date: str) -> str:
+    def _get_merged_prs_url(project: str, start_date: str, end_date: str) -> str:
         """Get the URL to see merged PRs in a date range on GitHub
 
         >>> GitClient._get_merged_prs_url('foo/bar-prj', '2018-01-01T22:02:39+00:00', '2018-01-02T22:02:39+00:00')[:46]
@@ -569,4 +569,4 @@ class GitClient:
         >>> GitClient._get_merged_prs_url('foo/bar-prj', '2018-01-01T22:02:39+00:00', '2018-01-02T22:02:39+00:00')[46:]
         'is:pr+is:closed+merged:2018-01-01T22:02:39+00:00..2018-01-02T22:02:39+00:00'
         """
-        return f'{DOMAIN}/{project_name}/pulls?utf8=✓&q=is:pr+is:closed+merged:{start_date}..{end_date}'
+        return f'{DOMAIN}/{project}/pulls?utf8=✓&q=is:pr+is:closed+merged:{start_date}..{end_date}'

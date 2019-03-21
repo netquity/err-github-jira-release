@@ -190,25 +190,25 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     def seal(self, msg: Message, args) -> Optional[str]:  # pylint:disable=unused-argument
         """Initiate the release sequence by tagging updated projects"""
         card_dict = {}
-        for project_name in self.git.get_updated_repo_names(self._get_project_names(), since_final=False):
+        for project in self.git.get_updated_repo_names(self._get_project_names(), since_final=False):
             # TODO: wrap in a try/except and roll back repos on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
             try:
-                new_version = self._bump_repo_tags(project_name, helpers.Stages.SEALED)
-                card_dict[project_name] = dict(
-                    self._get_version_card(project_name),
+                new_version = self._bump_repo_tags(project, helpers.Stages.SEALED)
+                card_dict[project] = dict(
+                    self._get_version_card(project),
                     **{'New Version Name': new_version}
                 )
             except NoJIRAIssuesFoundError as exc:
-                key = self._get_project_key(project_name)
+                key = self._get_project_key(project)
                 failure_message = (  # TODO: consider putting this information in card fields instead
-                    'Since `{final}`, {project_name} '
+                    'Since `{final}`, {project} '
                     'had {merge_summary} '
                     'but <{jira_issues}|Jira> {exc_msg}.'
                 ).format(
-                    final=self.git.get_final_tag(project_name).name,
-                    project_name=project_name,
-                    merge_summary=self._get_merge_summary(project_name),
+                    final=self.git.get_final_tag(project).name,
+                    project=project,
+                    merge_summary=self._get_merge_summary(project),
                     jira_issues=self.jira.get_latest_issues_url(key),
                     exc_msg=str(exc)[0].lower() + str(exc)[1:],
                 )
@@ -234,7 +234,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             # https://api.slack.com/docs/message-attachments#attachment_limits
             self._send_version_card(
                 msg,
-                project_name=name,
+                project=name,
                 card_dict=fields,
             )
 
@@ -249,25 +249,25 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         """
         fields = ()
         updated_projects = self.git.get_updated_repo_names(self._get_project_names())
-        for project_name in updated_projects:
+        for project in updated_projects:
             try:  # TODO: need similar try/except wherever calling bump_project_tags, but keep it DRY
                 failure_message = ''
-                new_version = self._bump_repo_tags(project_name, helpers.Stages.SENT)
+                new_version = self._bump_repo_tags(project, helpers.Stages.SENT)
                 # form a field for each project formatted like:
                 # ('net-net - v10.0.0 → v11.0.0-rc.2', '<https://best-url.com|12 PRs (major)>')
                 fields += (
                     '{repo_name} - {final} → {pre}'.format(  # field title
-                        repo_name=project_name.split("/")[1],  # get rid of org name for brevity
-                        final=self.git.get_final_tag(project_name).name,
+                        repo_name=project.split("/")[1],  # get rid of org name for brevity
+                        final=self.git.get_final_tag(project).name,
                         pre=new_version,
                     ),
-                    self._get_merge_summary(project_name)
-                    + f' ({self.jira.get_release_type(self._get_project_key(project_name))})',
+                    self._get_merge_summary(project)
+                    + f' ({self.jira.get_release_type(self._get_project_key(project))})',
                 ),
             except helpers.InvalidStageTransitionError:
-                failure_message = f'Invalid stage transition attempted when bumping {project_name}'
+                failure_message = f'Invalid stage transition attempted when bumping {project}'
             except helpers.InvalidVersionNameError:
-                failure_message = f'Invalid pre_version given when bumping {project_name}'
+                failure_message = f'Invalid pre_version given when bumping {project}'
             finally:
                 if failure_message:
                     self.log.exception(
@@ -291,11 +291,11 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         from gitclient import GitCommandError
         fields = ()
         updated_projects = self.git.get_updated_repo_names(self._get_project_names())
-        for project_name in updated_projects:
-            with self.git.project_git(project_name) as git:
-                key = self._get_project_key(project_name)
+        for project in updated_projects:
+            with self.git.project_git(project) as git:
+                key = self._get_project_key(project)
                 final = git.get_final_tag()
-                # new_version_name = self._bump_repo_tags(project_name, helpers.Stages.SIGNED)  # NOTE: comes with no `v`
+                # new_version_name = self._bump_repo_tags(project, helpers.Stages.SIGNED)  # NOTE: comes with no `v`
                 new_version_name = self.jira.get_pending_version_name(
                     key,
                     helpers.Stages.SIGNED,
@@ -345,25 +345,25 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 if not is_hotfix:
                     git.update_develop()
 
-    def _get_merge_summary(self, project_name: str) -> str:
+    def _get_merge_summary(self, project: str) -> str:
         """Return a link to GitHub's issue search showing the merged PRs """
         return '<{url}|{pr_count} merged PR(s)>'.format(
-            url=self.git.get_merged_prs_url(project_name),
-            pr_count=self.git.get_merge_count(project_name),
+            url=self.git.get_merged_prs_url(project),
+            pr_count=self.git.get_merge_count(project),
         )
 
-    def _get_project_root(self, project_name: str) -> str:
+    def _get_project_root(self, project: str) -> str:
         """Get the root of the project's Git repo locally."""
-        return self.config['REPOS_ROOT'] + project_name
+        return self.config['REPOS_ROOT'] + project
 
     def _get_project_names(self) -> List[str]:
         """Get the list of project names from the configuration"""
         return list(self.config['projects'])
 
-    def _get_project_key(self, project_name: str) -> str:
+    def _get_project_key(self, project: str) -> str:
         """Get the Jira project key for the given project name"""
         # TODO: catch `KeyError`
-        return self.config['projects'][project_name]
+        return self.config['projects'][project]
 
     def _get_jira_config(self) -> dict:
         """Return data required for initializing JiraClient"""
@@ -382,10 +382,10 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             'PROJECT_NAMES': self._get_project_names(),
         }
 
-    def _get_version_card(self, project_name: str) -> Dict:
-        with self.git.project_git(project_name) as git:
+    def _get_version_card(self, project: str) -> Dict:
+        with self.git.project_git(project) as git:
             final = git.get_final_tag()
-            project_key = self._get_project_key(project_name)
+            project_key = self._get_project_key(project)
             return {
                 'Key': project_key,
                 'Release Type': self.jira.get_release_type(project_key),
@@ -403,15 +403,15 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 'thumbnail': 'https://static.thenounproject.com/png/1662598-200.png',
             }
 
-    def _send_version_card(self, message: Message, project_name: str, card_dict: Dict[str, Union[str, int]]) -> None:
+    def _send_version_card(self, message: Message, project: str, card_dict: Dict[str, Union[str, int]]) -> None:
         """Send the Slack card containing version set information
 
         :param message:
-        :param project_name:
+        :param project:
         :param card_dict: a dict of values to be displayed on the version card
         """
         return self.send_card(  # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time
-            title=f'{project_name} - {card_dict.pop("New Version Name")}',
+            title=f'{project} - {card_dict.pop("New Version Name")}',
             link=card_dict.pop('GitHub Tag Comparison'),
             in_reply_to=message,  # TODO: sometimes the message should be sent to a different channel
             thumbnail=card_dict.pop('thumbnail'),
@@ -419,14 +419,14 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             color='green',
         )
 
-    def _bump_repo_tags(self, project_name: str, stage: str) -> str:
+    def _bump_repo_tags(self, project: str, stage: str) -> str:
         """Tag the project's repo with the next version's tags and push to origin
 
         :param stage: the release stage to transition into (seal, send, sign)
         """
-        with self.git.project_git(project_name) as git:
+        with self.git.project_git(project) as git:
             final = git.get_final_tag()
-            project_key = self._get_project_key(project_name)
+            project_key = self._get_project_key(project)
             new_version = self.jira.get_pending_version_name(
                 project_key,
                 stage,
@@ -446,10 +446,10 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             if exc.errno != errno.EEXIST:
                 raise exc
 
-        for project_name in self.config['projects']:
-            if not os.path.exists(os.path.join(self.config['REPOS_ROOT'], project_name)):
+        for project in self.config['projects']:
+            if not os.path.exists(os.path.join(self.config['REPOS_ROOT'], project)):
                 # Possible race condition if folder somehow gets created between check and creation
                 helpers.run_subprocess(
-                    ['git', 'clone', f"git@github.com:{project_name}.git", project_name],
+                    ['git', 'clone', f"git@github.com:{project}.git", project],
                     cwd=self.config['REPOS_ROOT'],
                 )
