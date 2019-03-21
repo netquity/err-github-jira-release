@@ -12,8 +12,9 @@ from datetime import datetime, timezone
 from functools import partial
 from inspect import getfullargspec
 from subprocess import CompletedProcess, CalledProcessError
+from collections import namedtuple
 
-from typing import Callable, List, Generator, Optional
+from typing import Callable, List, Generator, Optional, Dict
 
 from github import Github
 from github.Repository import Repository
@@ -23,6 +24,7 @@ from github.PaginatedList import PaginatedList
 import helpers
 
 logger = logging.getLogger(__file__)
+MergeLog = namedtuple('MergeLog', ['key', 'sha'])  # jira ticket key and commit sha
 
 DOMAIN = 'https://github.com'
 
@@ -336,6 +338,28 @@ class GitClient:
         :param since_final: if True, look for updates since the latest final tag; otherwise, since latest prerelease
         """
         return [project.full_name for project in self._get_updated_origins(project_names, since_final)]
+
+    def get_merge_logs(self, project_name) -> List[MergeLog]:
+        """Get a list of namedtuples containing each merged PR, its Jira Key, and short SHA"""
+        merges = []
+        for log in self._get_merges_since(
+                project_name,
+                self.get_final_tag(project_name),
+                '--pretty="%h %s"', "-1",
+        ):
+            sha, msg = log.split(' ', maxsplit=1)
+            # like: 'Merge ATP-27_Test_seal to develop' and we want just 'ATP-27'
+            try:
+                key = msg.split(' ')[1].split('_', maxsplit=1)[0]
+            except IndexError:  # just ignoring messages that don't fit the format
+                logger.warning(
+                    '%s: unexpected git log message format: "%s"; %s merge ignored from list',
+                    project_name,
+                    msg, sha,
+                )
+            merges.append(MergeLog(key, sha))
+        return merges
+
 
     def get_merge_count(self, project_name: str) -> int:
         """Get the number of merges to develop since the last final tag"""

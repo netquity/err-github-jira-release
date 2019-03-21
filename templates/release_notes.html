@@ -6,8 +6,7 @@
 <ul>
 
 {% for issue in issue_type.list %}
-<!-- TODO: add merge commit sha link here as well -->
-<li>[<a href='{{ issue.permalink() }}'>{{ issue.key }}</a>] - {{ issue.fields.summary }}</li>
+<li>[<a href='{{ issue.permalink() }}'>{{ issue.key.split('-')[1] }}</a>] {{ issue.sha }} - {{ issue.fields.summary }}</li>
 {% endfor %}
 
 </ul>

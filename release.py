@@ -313,7 +313,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     jira_version.name,
                     is_hotfix=False,  # FIXME: need to actually do something for hotfixes
                 )
-                release_notes = self.jira.get_release_notes(jira_version)
+                release_notes = self.jira.get_release_notes(jira_version, git.get_merge_logs())
                 is_hotfix = False  # TODO: TEMPORARY SHIM; REMOVE!!!
                 try:
                     if is_hotfix:

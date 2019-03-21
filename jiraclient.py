@@ -6,11 +6,14 @@ to provide release-management capabilities and nothing more.
 import datetime
 import logging
 
-from typing import Optional
+from typing import Optional, List
 
 from jinja2 import Environment, FileSystemLoader
 
 from helpers import Stages
+
+from gitclient import MergeLog
+
 
 logger = logging.getLogger(__file__)
 
@@ -90,7 +93,7 @@ class JiraClient:
             pre_version=pre_version[1:] if pre_version else None,
         )
 
-    def get_release_notes(self, version: Version) -> str:
+    def get_release_notes(self, version: Version, merge_logs: List[MergeLog]) -> str:
         """Produce release notes for a JIRA project version."""
         template = Environment(
             loader=FileSystemLoader(self.template_dir),
@@ -100,19 +103,25 @@ class JiraClient:
 
         project_name = self.api.project(version.projectId).name
         try:
+            issues = self.api.search_issues(
+                jql_str=(
+                    'project = {project_name} '
+                    'AND fixVersion = "{version_name}" '
+                    'ORDER BY issuetype ASC, updated DESC'
+                ).format(
+                    project_name=project_name,
+                    version_name=version.name,
+                ),
+            )
+
+            issues.sort(key=lambda issue: issue.key)
+            for issue in issues:
+                issue.sha = next(merge.sha for merge in merge_logs if merge.key == issue.key)
+
             return template.render({
                 'project_name': project_name,
                 'version_number': version.name,
-                'issues': self.api.search_issues(
-                    jql_str=(
-                        'project = {project_name} '
-                        'AND fixVersion = "{version_name}" '
-                        'ORDER BY issuetype ASC, updated DESC'
-                    ).format(
-                        project_name=project_name,
-                        version_name=version.name,
-                    ),
-                ),
+                'issues': issues,
             })
         except JIRAError as exc:
             logger.exception(
