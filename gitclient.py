@@ -205,7 +205,6 @@ class GitClient:
 
     def create_tag(self, project_name: str, tag_name: str) -> None:  # TODO: return TagData
         """Create a git tag on whatever commit HEAD is pointing at"""
-        tag_name = f'v{tag_name}'
         self._execute_project_git(
             project_name,
             ['tag', '-s', tag_name, '-m', tag_name, ]
