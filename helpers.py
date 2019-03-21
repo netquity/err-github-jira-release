@@ -215,3 +215,37 @@ def copytree(src: str, dst_parent: str, dst: str) -> str:
         return shutil.copytree(src, f'{dst_parent}/{dst}')
     except FileExistsError:
         logger.warning('Git repo backup %s already exists; ignoring.', f'{dst_parent}/{dst}')
+
+
+def change_sha(version: str, sha: str) -> str:
+    """Get a new version string containing an updated commit SHA
+
+    >>> change_sha('v1.0.0+52ea6b6', '666d074')  # sha only
+    'v1.0.0+666d074'
+    >>> change_sha('v1.0.0', '666d074')  # no metadata
+    'v1.0.0+666d074'
+    >>> change_sha('v1.0.0-rc.1', '666d074')  # pre-release only
+    'v1.0.0-rc.1+666d074'
+    >>> change_sha('v1.0.0+sealed.52ea6b6', '666d074')  # stage and sha
+    'v1.0.0+sealed.666d074'
+    >>> change_sha('v1.0.0-rc.1+sealed', '666d074')  # all but sha
+    'v1.0.0-rc.1+sealed.666d074'
+    >>> change_sha('v1.0.0-rc.1+sealed.52ea6b6', '666d074')  # just update sha
+    'v1.0.0-rc.1+sealed.666d074'
+    """
+    import re
+    from semver import parse, format_version
+    # get the part after the plus
+    m = re.search(r'(?<=\+).*', version)  # pylint:disable=invalid-name
+    if m:  # replace its part after the dot with the sha
+        version = re.sub(r'^(v)?(.*)$', r'\g<2>', version)  # in case version string starts with `v`
+        parsed = parse(version)
+        if '.' in m.group(0):
+            build = m.group(0).split('.')[0] + f'.{sha}'
+            parsed['build'] = build
+        elif m.group(0) in [key.lower() for key in Stages.__members__.keys()]:
+            parsed['build'] += f'.{sha}'
+        else:
+            parsed['build'] = sha
+        return 'v' + format_version(**parsed)
+    return version + f'+{sha}'
