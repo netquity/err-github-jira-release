@@ -340,7 +340,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 new_version_name = helpers.change_sha(new_version_name, git.get_ref()[:7])
                 self.jira.change_version_name(jira_version, new_version_name)
                 git.create_tag(tag_name=new_version_name)
-                git.create_ref(new_version_name=new_version_name)  # FIXME: reference already exists?
+                git.create_ref(new_version_name=new_version_name)
                 git.create_release(release_notes=release_notes, new_version_name=new_version_name)
                 if not is_hotfix:
                     git.update_develop()
