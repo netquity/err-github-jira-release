@@ -491,7 +491,7 @@ class GitClient:
         return self._execute_project_git(
             project,
             ['log', f'{tag.name}...origin/develop', '--merges', '--oneline', *flags]
-        ).stdout.replace('"', '').splitlines()
+        ).stdout.replace('"', '').splitlines()[:-1]  # remove last entry as it's the update from master
 
     def _backup_repo(self, project: str) -> str:
         """Create a backup of the entire local repo folder and return the destination
