@@ -236,7 +236,7 @@ class JiraClient:
     def change_version_name(self, version: Version, new_name: str) -> Version:
         """Change the Jira version's name"""
         version = version.update(name=new_name)
-        logger.info('Changed Jira version %s to %s', version, new_name)
+        logger.info('Changed Jira version %s to %s', version.name, new_name)
         return version
 
     # Doesn't work, probably need to pull the logo from GitHub
