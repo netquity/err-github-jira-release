@@ -25,12 +25,20 @@ except ImportError:
     logger.error("Please install 'jira' and 'pygithub' Python packages")
 
 
-class JIRAVersionError(Exception):
+class JiraClientError(Exception):
+    """Module-level exception class"""
+
+
+class JIRAVersionError(JiraClientError):
     """Could not find the given JIRA version resource."""
 
 
-class NoJIRAIssuesFoundError(Exception):
+class NoJIRAIssuesFoundError(JiraClientError):
     """No JIRA issues match the given search parameters."""
+
+
+class IssueMergesCountMismatchError(JiraClientError):
+    """The number pending Jira issues does not match the number of merged PRs."""
 
 
 class JiraClient:
@@ -115,6 +123,20 @@ class JiraClient:
             )
 
             issues.sort(key=lambda issue: issue.key)
+            if len(issues) != len(merge_logs):
+                logger.error(
+                    '%s: Jira issue count (%s) does not match merge count (%s) for %s',
+                    project_name,
+                    len(issues),
+                    len(merge_logs),
+                    version.name,
+                )
+                raise IssueMergesCountMismatchError(
+                    '%s got %s Jira issues but %s merged PRs.',
+                    project_name,
+                    len(issues),
+                    len(merge_logs),
+                )
             for issue in issues:
                 issue.sha = next(merge.sha for merge in merge_logs if merge.key == issue.key)
 
@@ -177,12 +199,14 @@ class JiraClient:
     def set_fix_version(self, project_key: str, new_version: str, is_hotfix: bool = False) -> None:
         """Set the fixVersion on all of the closed tickets without one."""
         # TODO: exceptions
-        for issue in self.api.search_issues(
-                # For non-hotfix releases the release type isn't part of the search criteria since it's a mixture
-                jql_str=self.get_issue_search_string(project_key) + (
-                    'AND "Release Type" = "Hotfix"' if is_hotfix else ''
-                )
-        ):
+        issues = self.api.search_issues(
+            # For non-hotfix releases the release type isn't part of the search criteria since it's a mixture
+            jql_str=self.get_issue_search_string(project_key) + (
+                'AND "Release Type" = "Hotfix"' if is_hotfix else ''
+            )
+        )
+        logger.info('%s: starting setting fixVersion %s on %s issues', project_key.upper(), new_version, len(issues))
+        for issue in issues:
             self.api.transition_issue(issue, 'Reopen Issue')
 
             issue.update(
@@ -195,19 +219,29 @@ class JiraClient:
             )
 
             self.api.transition_issue(issue, 'Close Issue')
+            logger.info('%s: set fixVersion %s on %s', project_key.upper(), new_version, issue.key)
+        logger.info('%s: set fixVersion %s on %s issues', project_key.upper(), new_version, len(issues))
 
     def create_version(self, project_key: str, new_version: str, released: bool = False) -> Version:
         """Create a Jira version, applying the appropriate version bump"""
-        return self.api.create_version(
+        version = self.api.create_version(
             new_version,
             project=project_key.upper(),
             released=released,
             releaseDate=datetime.datetime.now().date().isoformat(),
         )
+        logger.info('%s: created new Jira version %s (released=%s)', project_key.upper(), new_version, released)
+        return version
 
     def change_version_name(self, version: Version, new_name: str) -> Version:
         """Change the Jira version's name"""
-        return version.update(name=new_name)
+        version = version.update(name=new_name)
+        logger.info('Changed Jira version %s to %s', version, new_name)
+        return version
+
+    # Doesn't work, probably need to pull the logo from GitHub
+    # def get_project_avatar(self, project_key: str) -> str:
+    #     return self.api.project(project_key).raw['avatarUrls']['48x48']
 
     @staticmethod
     def delete_version(project_key: str, version: Version, failed_command: str = 'JIRA') -> Optional[str]:
@@ -215,7 +249,9 @@ class JiraClient:
 
         Used to undo created versions when subsequent operations fail."""
         try:
-            return version.delete()  # Remove version from issues it's attached to
+            version.delete()  # Remove version from issues it's attached to
+            logger.info('%s: deleted Jira version %s', project_key.upper(), version.name)
+            return
         except JIRAError:
             exc_message = (
                 'Unable to complete JIRA request for project_key={} and unable to clean up new version={}'.format(

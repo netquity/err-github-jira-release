@@ -209,6 +209,7 @@ class GitClient:
             project,
             ['tag', '-s', tag_name, '-m', tag_name, ]
         )
+        logger.info('%s: created tag %s', project, tag_name)
 
     def create_ref(self, project: str, version_name: str, ref: str = 'master') -> None:
         """Create a ref and push it to origin
@@ -219,6 +220,7 @@ class GitClient:
             f'refs/tags/{version_name}',
             self.get_rev_hash(project, ref),  # TODO: this will have to be something else for hotfixes
         )
+        logger.info('%s: created ref %s', project, version_name)
 
     def create_release(self, project: str, release_notes: str, version_name: str):
         """Create a GitHub release object and push it origin
@@ -232,6 +234,7 @@ class GitClient:
             draft=False,
             prerelease=False,
         )
+        logger.info('%s: created ref %s', project, version_name)
 
     def tag_develop(self, project: str, tag_name: str) -> None:
         """Compound check, tag, ref creation and pushing it all to origin
@@ -297,6 +300,7 @@ class GitClient:
                     ['checkout', '-B', ref, f'origin/{ref}'],
             ]:
                 gcmd(git_command)
+        logger.info('%s: checked out latest origin/%s', project, ref)
 
     def add_release_notes_to_develop(self, project: str, version_name: str, release_notes: str) -> str:
         """Wrap subprocess calls with some project-specific defaults.
