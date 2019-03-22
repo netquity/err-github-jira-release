@@ -33,6 +33,24 @@ class GitCommandError(Exception):
     """A git command has failed"""
 
 
+def format_version(version: str) -> str:
+    """Get the given version with a leading `v` character
+
+    >>> format_version('1.0.0')
+    'v1.0.0'
+    >>> format_version('v1.0.0')
+    'v1.0.0'
+    >>> format_version('1.0.0+666d074')
+    'v1.0.0+666d074'
+    >>> format_version('1.0.0+sealed.666d074')
+    'v1.0.0+sealed.666d074'
+    >>> format_version('v1.0.0+sealed.666d074')
+    'v1.0.0+sealed.666d074'
+    """
+    import re
+    return re.sub(r'^(v)?(.*)$', r'v\g<2>', version)
+
+
 def _execute_path_git(project_root: str, git_command: list) -> CompletedProcess:
     """Execute a git command in a specific directory"""
     try:
@@ -205,6 +223,7 @@ class GitClient:
 
     def create_tag(self, project: str, tag_name: str) -> None:  # TODO: return TagData
         """Create a git tag on whatever commit HEAD is pointing at"""
+        tag_name = format_version(tag_name)
         self._execute_project_git(
             project,
             ['tag', '-s', tag_name, '-m', tag_name, ]
@@ -216,6 +235,7 @@ class GitClient:
 
         https://developer.github.com/v3/git/refs/#create-a-reference
         """
+        version_name = format_version(version_name)
         self._get_origin(project).create_git_ref(
             f'refs/tags/{version_name}',
             self.get_rev_hash(project, ref),  # TODO: this will have to be something else for hotfixes
@@ -227,6 +247,7 @@ class GitClient:
 
         https://developer.github.com/v3/repos/releases/#create-a-release
         """
+        version_name = format_version(version_name)
         self._get_origin(project).create_git_release(
             tag=version_name,
             name=f'{project} - Version {version_name}',
@@ -242,6 +263,7 @@ class GitClient:
         :param project:
         :param tag_name: the new tag to apply to develop's HEAD
         """
+        tag_name = format_version(tag_name)
         self.checkout_latest(project, 'develop')
         self.create_tag(project, tag_name)
         self.create_ref(project, tag_name, 'develop')
