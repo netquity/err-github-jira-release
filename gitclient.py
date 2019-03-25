@@ -352,7 +352,7 @@ class GitClient:
 
         return self.get_rev_hash(project, 'develop')
 
-    def get_updated_repo_names(self, projects: List[str], since_final: bool = True) -> List[str]:
+    def get_updated_repo_names(self, since_final: bool = True) -> List[str]:
         """
         Get a list of the full names of the repos that have commits to develop since either the last final or
         prerelease
@@ -362,7 +362,7 @@ class GitClient:
 
         :param since_final: if True, look for updates since the latest final tag; otherwise, since latest prerelease
         """
-        return [project.full_name for project in self._get_updated_origins(projects, since_final)]
+        return [project.full_name for project in self._get_updated_origins(self.projects, since_final)]
 
     def get_merge_logs(self, project: str) -> List[MergeLog]:
         """Get a list of namedtuples containing each merged PR, its Jira Key, and short SHA"""

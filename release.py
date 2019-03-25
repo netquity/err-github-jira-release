@@ -204,7 +204,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     def sign(self, msg: Message, args):  # pylint:disable=unused-argument
         from gitclient import GitCommandError
         fields = ()
-        updated_projects = self.git.get_updated_repo_names(self._get_project_names())
+        updated_projects = self.git.get_updated_repo_names()
         for project in updated_projects:
             with self.git.project_git(project) as git:
                 key = self._get_project_key(project)
@@ -277,10 +277,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             raise ValueError('Given stage=%s not supported.' % stage)
 
         card_dict = {}
-        updated_projects = self.git.get_updated_repo_names(
-            self._get_project_names(),
-            since_final,
-        )
+        updated_projects = self.git.get_updated_repo_names(since_final)
         for project in updated_projects:
             # TODO: wrap in a try/except and roll back repos and jira on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
