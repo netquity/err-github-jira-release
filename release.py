@@ -190,35 +190,40 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     def seal(self, msg: Message, args) -> Optional[str]:  # pylint:disable=unused-argument
         """Initiate the release sequence by tagging updated projects"""
         card_dict = {}
-        for project in self.git.get_updated_repo_names(self._get_project_names(), since_final=False):
+        # TODO: call separate methods if no updates were made at all vs some updates
+        updated_projects = self.git.get_updated_repo_names(self._get_project_names(), since_final=False)
+        for project in updated_projects:
             # TODO: wrap in a try/except and roll back repos on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
             try:
+                failure_message = ''
                 new_version = self._bump_repo_tags(project, helpers.Stages.SEALED)
                 card_dict[project] = dict(
                     self._get_version_card(project),
                     **{'New Version Name': new_version}
                 )
             except NoJIRAIssuesFoundError as exc:
-                key = self._get_project_key(project)
                 failure_message = (  # TODO: consider putting this information in card fields instead
                     'Since `{final}`, {project} had {merge_summary} but <{jira_issues}|Jira> {exc_msg}.'
                 ).format(
                     final=self.git.get_final_tag(project).name,
                     project=project,
                     merge_summary=self._get_merge_summary(project),
-                    jira_issues=self.jira.get_latest_issues_url(key),
+                    jira_issues=self.jira.get_latest_issues_url(self._get_project_key(project)),
                     exc_msg=str(exc)[0].lower() + str(exc)[1:],  # lower first letter of exc message
                 )
-
-                self.log.exception(
-                    failure_message,
-                )
-                self.send_card(
-                    in_reply_to=msg,
-                    body=failure_message,
-                    color='red',
-                )
+            except helpers.InvalidStageTransitionError:
+                failure_message = f'Invalid stage transition attempted when bumping {project}'
+            except helpers.InvalidVersionNameError:
+                failure_message = f'Invalid pre_version given when bumping {project}'
+            finally:
+                if failure_message:
+                    self.log.exception(failure_message,)
+                    return self.send_card(  # pylint:disable=lost-exception
+                        in_reply_to=msg,
+                        body=failure_message,
+                        color='red',
+                    )
         if not card_dict:
             self.log.warning('seal: no projects updated.')
             return self.send_card(
@@ -263,6 +268,16 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     self._get_merge_summary(project)
                     + f' ({self.jira.get_release_type(self._get_project_key(project))})',
                 ),
+            except NoJIRAIssuesFoundError as exc:
+                failure_message = (  # TODO: consider putting this information in card fields instead
+                    'Since `{final}`, {project} had {merge_summary} but <{jira_issues}|Jira> {exc_msg}.'
+                ).format(
+                    final=self.git.get_final_tag(project).name,
+                    project=project,
+                    merge_summary=self._get_merge_summary(project),
+                    jira_issues=self.jira.get_latest_issues_url(self._get_project_key(project)),
+                    exc_msg=str(exc)[0].lower() + str(exc)[1:],  # lower first letter of exc message
+                )
             except helpers.InvalidStageTransitionError:
                 failure_message = f'Invalid stage transition attempted when bumping {project}'
             except helpers.InvalidVersionNameError:
