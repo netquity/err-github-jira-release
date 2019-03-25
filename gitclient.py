@@ -370,7 +370,7 @@ class GitClient:
         for log in self._get_merges_since(
                 project,
                 self.get_final_tag(project),
-                '--pretty="%h %s"', "-1",
+                '--pretty="%h %s"',
         ):
             sha, msg = log.split(' ', maxsplit=1)
             # like: 'Merge ATP-27_Test_seal to develop' and we want just 'ATP-27'
