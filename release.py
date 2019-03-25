@@ -189,60 +189,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     @botcmd
     def seal(self, msg: Message, args) -> Optional[str]:  # pylint:disable=unused-argument
         """Initiate the release sequence by tagging updated projects"""
-        card_dict = {}
-        # TODO: call separate methods if no updates were made at all vs some updates
-        updated_projects = self.git.get_updated_repo_names(self._get_project_names(), since_final=False)
-        for project in updated_projects:
-            # TODO: wrap in a try/except and roll back repos on any kind of failure
-            # TODO: these bumps can all be done asynchronously, they don't depend on each other
-            try:
-                failure_message = ''
-                new_version = self._bump_repo_tags(project, helpers.Stages.SEALED)
-                card_dict[project] = dict(
-                    self._get_version_card(project),
-                    **{'New Version Name': new_version}
-                )
-            except NoJIRAIssuesFoundError as exc:
-                failure_message = (  # TODO: consider putting this information in card fields instead
-                    'Since `{final}`, {project} had {merge_summary} but <{jira_issues}|Jira> {exc_msg}.'
-                ).format(
-                    final=self.git.get_final_tag(project).name,
-                    project=project,
-                    merge_summary=self._get_merge_summary(project),
-                    jira_issues=self.jira.get_latest_issues_url(self._get_project_key(project)),
-                    exc_msg=str(exc)[0].lower() + str(exc)[1:],  # lower first letter of exc message
-                )
-            except helpers.InvalidStageTransitionError:
-                failure_message = f'Invalid stage transition attempted when bumping {project}'
-            except helpers.InvalidVersionNameError:
-                failure_message = f'Invalid pre_version given when bumping {project}'
-            finally:
-                if failure_message:
-                    self.log.exception(failure_message,)
-                    return self.send_card(  # pylint:disable=lost-exception
-                        in_reply_to=msg,
-                        body=failure_message,
-                        color='red',
-                    )
-        if not card_dict:
-            self.log.warning('seal: no projects updated.')
-            return self.send_card(
-                in_reply_to=msg,
-                body='No projects updated.',
-                color='red',
-            )
-        yield f"{len(card_dict)} projects updated: \n\t• " + '\n\t• '.join(list(card_dict))
-
-        for name, fields in card_dict.items():
-            # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time:
-            # https://api.slack.com/docs/message-attachments#attachment_limits
-            self._send_version_card(
-                msg,
-                project=name,
-                card_dict=fields,
-            )
-
-        return f'{len(card_dict)} / {len(self._get_project_names())} projects updated since last release.'
+        return self._bump_projects_set(msg, helpers.Stages.SEALED)
 
     @botcmd
     def send(self, msg: Message, args) -> str:  # pylint:disable=unused-argument
@@ -251,61 +198,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         This command is called only after the `seal` command is called and the sealed version set is tested and
         approved.
         """
-        card_dict = {}
-        updated_projects = self.git.get_updated_repo_names(self._get_project_names())
-        for project in updated_projects:
-            try:
-                failure_message = ''
-                new_version = self._bump_repo_tags(project, helpers.Stages.SENT)
-                card_dict[project] = dict(
-                    self._get_version_card(project),
-                    **{'New Version Name': new_version}
-                )
-            except NoJIRAIssuesFoundError as exc:
-                failure_message = (  # TODO: consider putting this information in card fields instead
-                    'Since `{final}`, {project} had {merge_summary} but <{jira_issues}|Jira> {exc_msg}.'
-                ).format(
-                    final=self.git.get_final_tag(project).name,
-                    project=project,
-                    merge_summary=self._get_merge_summary(project),
-                    jira_issues=self.jira.get_latest_issues_url(self._get_project_key(project)),
-                    exc_msg=str(exc)[0].lower() + str(exc)[1:],  # lower first letter of exc message
-                )
-            except helpers.InvalidStageTransitionError:
-                failure_message = f'Invalid stage transition attempted when bumping {project}'
-            except helpers.InvalidVersionNameError:
-                failure_message = f'Invalid pre_version given when bumping {project}'
-            finally:
-                if failure_message:
-                    self.log.exception(failure_message,)
-                    return self.send_card(  # pylint:disable=lost-exception
-                        in_reply_to=msg,
-                        body=failure_message,
-                        color='red',
-                    )
-        if not card_dict:
-            self.log.warning('send: no projects updated.')
-            return self.send_card(
-                in_reply_to=msg,
-                body='No projects updated.',
-                color='red',
-            )
-        yield f"{len(card_dict)} projects updated: \n\t• " + '\n\t• '.join(list(card_dict))
-
-        for name, fields in card_dict.items():
-            # self.send_card(  # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time
-            #     title=str(len(updated_projects)) + ' release(s)',
-            #     to=self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER']),
-            #     fields=fields,
-            #     color='green',
-            # )
-            self._send_version_card(
-                msg,
-                project=name,
-                card_dict=fields,
-                # to=self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER']), TODO
-            )
-        return "I have sent your sealed version set to the UAT channel. Awaiting their approval."
+        return self._bump_projects_set(msg, helpers.Stages.SENT)
 
     @botcmd
     def sign(self, msg: Message, args):  # pylint:disable=unused-argument
@@ -365,6 +258,81 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 git.create_release(release_notes=release_notes, version_name=new_version_name)
                 if not is_hotfix:
                     git.update_develop()
+
+    def _bump_projects_set(self, msg: Message, stage: helpers.Stages) -> Optional[str]:
+        """Transition the entire set of updated projects to the given stage
+
+        This method produces side-effects on Jira, Git (local and origin), and whatever chat backend is being used:
+        - git: create tag and ref
+        - jira: create version
+        - backend: send cards and messages
+        """
+        if stage == helpers.Stages.SEALED:
+            since_final = False
+            to = msg.frm
+        elif stage == helpers.Stages.SENT:
+            since_final = True
+            to = self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER'])
+        else:
+            raise ValueError('Given stage=%s not supported.' % stage)
+
+        card_dict = {}
+        updated_projects = self.git.get_updated_repo_names(
+            self._get_project_names(),
+            since_final,
+        )
+        for project in updated_projects:
+            # TODO: wrap in a try/except and roll back repos and jira on any kind of failure
+            # TODO: these bumps can all be done asynchronously, they don't depend on each other
+            try:
+                failure_message = ''
+                new_version = self._bump_repo_tags(project, stage)
+                card_dict[project] = dict(
+                    self._get_version_card(project),
+                    **{'New Version Name': new_version}
+                )
+            except NoJIRAIssuesFoundError as exc:
+                failure_message = (  # TODO: consider putting this information in card fields instead
+                    'Since `{final}`, {project} had {merge_summary} but <{jira_issues}|Jira> {exc_msg}.'
+                ).format(
+                    final=self.git.get_final_tag(project).name,
+                    project=project,
+                    merge_summary=self._get_merge_summary(project),
+                    jira_issues=self.jira.get_latest_issues_url(self._get_project_key(project)),
+                    exc_msg=str(exc)[0].lower() + str(exc)[1:],  # lower first letter of exc message
+                )
+            except helpers.InvalidStageTransitionError:
+                failure_message = f'Invalid stage transition attempted when bumping {project}'
+            except helpers.InvalidVersionNameError:
+                failure_message = f'Invalid pre_version given when bumping {project}'
+            finally:
+                if failure_message:
+                    self.log.exception(failure_message,)
+                    return self.send_card(  # pylint:disable=lost-exception
+                        in_reply_to=msg,
+                        body=failure_message,
+                        color='red',
+                    )
+        if not card_dict:
+            self.log.warning(f'{stage.verb}: no projects updated.')
+            return self.send_card(
+                in_reply_to=msg,
+                body='No projects updated.',
+                color='red',
+            )
+        # FIXME: doesn't work as a yield for `send` because need to send to different channels
+        yield f"{len(card_dict)} projects updated: \n\t• " + '\n\t• '.join(list(card_dict))
+
+        for name, fields in card_dict.items():
+            # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time:
+            # https://api.slack.com/docs/message-attachments#attachment_limits
+            self._send_version_card(
+                msg,  # to=self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER']), TODO
+                project=name,
+                card_dict=fields,
+            )
+        return f'{len(card_dict)} / {len(self._get_project_names())} projects updated since last release.'
+        # return "I have sent your sealed version set to the UAT channel. Awaiting their approval."
 
     def _get_merge_summary(self, project: str) -> str:
         """Return a link to GitHub's issue search showing the merged PRs """
