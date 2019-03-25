@@ -220,6 +220,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     color='red',
                 )
         if not card_dict:
+            self.log.warning('seal: no projects updated.')
             return self.send_card(
                 in_reply_to=msg,
                 body='No projects updated.',
