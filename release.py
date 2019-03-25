@@ -202,9 +202,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             except NoJIRAIssuesFoundError as exc:
                 key = self._get_project_key(project)
                 failure_message = (  # TODO: consider putting this information in card fields instead
-                    'Since `{final}`, {project} '
-                    'had {merge_summary} '
-                    'but <{jira_issues}|Jira> {exc_msg}.'
+                    'Since `{final}`, {project} had {merge_summary} but <{jira_issues}|Jira> {exc_msg}.'
                 ).format(
                     final=self.git.get_final_tag(project).name,
                     project=project,
