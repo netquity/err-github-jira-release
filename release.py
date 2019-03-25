@@ -208,7 +208,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     project=project,
                     merge_summary=self._get_merge_summary(project),
                     jira_issues=self.jira.get_latest_issues_url(key),
-                    exc_msg=str(exc)[0].lower() + str(exc)[1:],
+                    exc_msg=str(exc)[0].lower() + str(exc)[1:],  # lower first letter of exc message
                 )
 
                 self.log.exception(
@@ -286,7 +286,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         return "I have sent your sealed version set to the UAT channel. Awaiting their approval."
 
     @botcmd
-    def sign(self, msg: Message, args):
+    def sign(self, msg: Message, args):  # pylint:disable=unused-argument
         from gitclient import GitCommandError
         fields = ()
         updated_projects = self.git.get_updated_repo_names(self._get_project_names())

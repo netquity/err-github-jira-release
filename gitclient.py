@@ -417,7 +417,7 @@ class GitClient:
             base=final.name,
             head=self.get_prerelease_tag(
                 project,
-                min_version=final,
+                min_version=final,  # requires that a pre-release exists since last final
             ).name,
         ).html_url
 
