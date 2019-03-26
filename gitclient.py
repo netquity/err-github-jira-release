@@ -91,6 +91,7 @@ class GitClient:
                 )
             self._project = project
             self._tag = tag
+            logger.debug('%s inited TagData for %s', project, self.name)
 
         @property
         def project(self):
@@ -208,10 +209,12 @@ class GitClient:
 
     def get_ref(self, project: str) -> str:
         """Get the latest rev hash from reflog"""
-        return self._execute_project_git(
+        ref = self._execute_project_git(
             project,
             ['reflog', 'show', '--format=%H', '-1']
         ).stdout.splitlines()[0]
+        logger.debug('%s get latest rev hash from reflog: %s', project, ref)
+        return ref
 
     def clean(self, project: str) -> CompletedProcess:
         """Recursively remove files that aren't under source control"""
@@ -270,13 +273,16 @@ class GitClient:
 
     def get_rev_hash(self, project: str, ref: str) -> str:
         """Get the SHA1 hash of a particular git ref"""
-        return self._execute_project_git(
+        rev_hash = self._execute_project_git(
             project,
             ['rev-parse', ref]
         ).stdout.strip()  # Get rid of the newline character at the end
+        logger.debug('%s get rev hash of ref %s: %s', project, ref, rev_hash)
+        return rev_hash
 
     def merge_and_create_release_commit(self, project: str, version_name: str, release_notes: str) -> None:
         """Create a release commit based on origin/develop and merge it to master"""
+        logger.info('%s start merging and creating release commit for %s', project, version_name)
         with self._gcmd(project) as gcmd:
             for git_command in [
                     # TODO: deal with merge conflicts in an interactive way
@@ -302,9 +308,11 @@ class GitClient:
                     ['push', 'origin', 'master'],
             ]:
                 gcmd(git_command)
+        logger.info('%s complete merging and creating release commit for %s', project, version_name)
 
     def update_develop(self, project: str) -> None:
         """Merge master branch to develop"""
+        logger.debug('%s start update develop by merging master', project)
         with self._gcmd(project) as gcmd:
             for git_command in [
                     ['fetch', '-p'],
@@ -313,6 +321,7 @@ class GitClient:
                     ['push', 'origin', 'develop'],
             ]:
                 gcmd(git_command)
+        logger.debug('%s complete update develop by merging master', project)
 
     def checkout_latest(self, project: str, ref: str) -> None:
         """Check out the latest version of develop for the given project"""
@@ -329,6 +338,12 @@ class GitClient:
 
         :return: Release commit hash.
         """
+        logger.info(
+            '%s start adding release notes to develop %s (now %s)',
+            project,
+            version_name,
+            self.get_rev_hash(project, 'develop'),
+        )
         with self._gcmd(project) as gcmd:
             for git_command in [
                     # TODO: deal with merge conflicts in an interactive way
@@ -350,7 +365,9 @@ class GitClient:
             ]:
                 gcmd(git_command)
 
-        return self.get_rev_hash(project, 'develop')
+        rev_hash = self.get_rev_hash(project, 'develop')
+        logger.info('%s complete adding release notes to develop %s (now %s)', project, version_name, rev_hash)
+        return rev_hash
 
     def get_updated_repo_names(self, since_final: bool = True) -> List[str]:
         """
@@ -362,7 +379,9 @@ class GitClient:
 
         :param since_final: if True, look for updates since the latest final tag; otherwise, since latest prerelease
         """
-        return [project.full_name for project in self._get_updated_origins(self.projects, since_final)]
+        project_names = [project.full_name for project in self._get_updated_origins(self.projects, since_final)]
+        logger.debug('Get updated projects: %s/%s since_final=%s', len(project_names), len(self.projects), since_final)
+        return project_names
 
     def get_merge_logs(self, project: str) -> List[MergeLog]:
         """Get a list of namedtuples containing each merged PR, its Jira Key, and short SHA"""
@@ -383,8 +402,8 @@ class GitClient:
                     msg, sha,
                 )
             merges.append(MergeLog(key, sha))
+        logger.debug('%s get merge logs: %s merged PRs', project, len(merges))
         return merges
-
 
     def get_merge_count(self, project: str) -> int:
         """Get the number of merges to develop since the last final tag"""
@@ -405,10 +424,14 @@ class GitClient:
         try:
             pre_tag = GitClient._get_latest_tag(self._get_origin(project), find_final=False)
             if not min_version:
+                logger.debug('%s get prerelease tag, min_version=None: %s', project, pre_tag.name)
                 return pre_tag
         except AttributeError:
+            logger.debug('%s get prerelease tag, min_version=%s: None', project, min_version)
             return None
-        return pre_tag if GitClient.TagData.is_older_name(min_version.name, pre_tag.name) else None
+        tag = pre_tag if GitClient.TagData.is_older_name(min_version.name, pre_tag.name) else None
+        logger.debug('%s get prerelease tag, min_version=%s: %s', project, min_version, getattr(tag, 'name', None))
+        return tag
 
     def get_compare_url(self, project: str) -> str:
         """Get the URL to compare the latest final with the latest prerelease on GitHub"""
@@ -456,12 +479,14 @@ class GitClient:
         """
         return [self._get_origin(project) for project in projects]
 
-    def _get_origin(self, project: str):
+    def _get_origin(self, project: str) -> Repository:
         """Get the remote repo that a project was cloned from
 
         Note: only a single remote, `origin`, is currently supported.
         """
-        return self.github.get_repo(project)
+        origin = self.github.get_repo(project)
+        logger.debug('%s: get origin %s', project, origin.url)
+        return origin
 
     def _is_updated_since(self, origin: Repository, since_final: bool = True) -> bool:
         """Check if the given origin has commits to develop since either the last final or prerelease"""
@@ -483,7 +508,9 @@ class GitClient:
     def _get_merge_count_since(self, project: str, tag: TagData) -> int:
         """Get the number of merges to develop since the given tag"""
         # The first result will be the merge commit from last release
-        return len(self._get_merges_since(project, tag,)) - 1
+        count = len(self._get_merges_since(project, tag,)) - 1
+        logger.debug('%s merge count since %s: %s', project, tag.name, count)
+        return count
 
     def _get_merges_since(self, project: str, tag: TagData, *flags: List[str]) -> List[str]:
         """Get the git log entries to develop since the given tag"""
@@ -552,11 +579,13 @@ class GitClient:
 
         :param find_final: if True, look for the latest final tag; otherwise, look for latest prerelease
         """
-        return cls._find_tag(
+        tag = cls._find_tag(
             origin,
             cls.TagData.is_final_name if find_final
             else lambda tag: not cls.TagData.is_final_name(tag)
         )
+        logger.debug('%s get latest tag (find_final=%s): %s', origin.full_name, find_final, getattr(tag, 'name', None))
+        return tag
 
     @classmethod
     def _find_tag(cls, origin: Repository, test: Callable[[str], bool]) -> Optional['TagData']:
