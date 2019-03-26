@@ -269,7 +269,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         """
         if stage == helpers.Stages.SEALED:
             since_final = False
-            to = msg.frm
+            to = msg.frm  # FIXME: unused
         elif stage == helpers.Stages.SENT:
             since_final = True
             to = self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER'])
@@ -277,12 +277,12 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             raise ValueError('Given stage=%s not supported.' % stage)
 
         card_dict = {}
+        failure_message = ''
         updated_projects = self.git.get_updated_repo_names(since_final)
         for project in updated_projects:
             # TODO: wrap in a try/except and roll back repos and jira on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
             try:
-                failure_message = ''
                 new_version = self._bump_repo_tags(project, stage)
                 card_dict[project] = dict(
                     self._get_version_card(project),
@@ -379,7 +379,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 'Previous Version': f'<{final.url}|{final.name}>',
                 'Previous vCommit': final.sha,
 
-                'Merge Count': git.get_merge_count(),
+                'Merge Count': git.get_merge_count(),  # TODO: use _get_merge_summary?
                 # TODO: it would be nice to be able to dynamically pass in functions for fields to show up on the card
                 'New Migrations': git.get_migration_count(),  # FIXME: too django-specific
 
@@ -389,7 +389,12 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 'thumbnail': 'https://static.thenounproject.com/png/1662598-200.png',
             }
 
-    def _send_version_card(self, message: Message, project: str, card_dict: Dict[str, Union[str, int]]) -> None:
+    def _send_version_card(
+            self,
+            message: Message,
+            project: str,
+            card_dict: Dict[str, Union[str, int]],
+    ) -> None:
         """Send the Slack card containing version set information
 
         :param message:
