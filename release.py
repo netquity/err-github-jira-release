@@ -215,7 +215,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     helpers.Stages.SIGNED,
                     git.get_rev_hash(ref="origin/develop")[:7],
                     final.name,
-                    git.get_prerelease_tag(min_version=final).name,
+                    getattr(git.get_prerelease_tag(min_version=final), 'name', None),
                 )
                 jira_version = self.jira.create_version(
                     key,
@@ -418,7 +418,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 stage,
                 git.get_rev_hash(ref="origin/develop")[:7],
                 final.name,
-                git.get_prerelease_tag(min_version=final).name,
+                getattr(git.get_prerelease_tag(min_version=final), 'name', None),
             )
             git.tag_develop(tag_name=new_version)
             return new_version
