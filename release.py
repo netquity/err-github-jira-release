@@ -401,7 +401,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         :param project:
         :param card_dict: a dict of values to be displayed on the version card
         """
-        return self.send_card(  # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time
+        self.send_card(  # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time
             title=f'{project} - {card_dict.pop("New Version Name")}',
             link=card_dict.pop('GitHub Tag Comparison'),
             in_reply_to=message,  # TODO: sometimes the message should be sent to a different channel
@@ -409,6 +409,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             fields=tuple(card_dict.items()),
             color='green',
         )
+        self.log.debug('%s sent version card', project)
 
     def _bump_repo_tags(self, project: str, stage: str) -> str:
         """Tag the project's repo with the next version's tags and push to origin
