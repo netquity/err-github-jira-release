@@ -311,7 +311,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                         color='red',
                     )
         if not card_dict:
-            self.log.warning(f'{stage.verb}: no projects updated.')
+            self.log.warning('%s: no projects updated.', stage.verb)
             return self.send_card(
                 in_reply_to=msg,
                 body='No projects updated.',
