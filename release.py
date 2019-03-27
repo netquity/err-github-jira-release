@@ -276,18 +276,21 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         else:
             raise ValueError('Given stage=%s not supported.' % stage)
 
-        card_dict = {}
         failure_message = ''
+        bumped_counter = 0
         updated_projects = self.git.get_updated_repo_names(since_final)
         for project in updated_projects:
             # TODO: wrap in a try/except and roll back repos and jira on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
             try:
                 new_version = self._bump_repo_tags(project, stage)
-                card_dict[project] = dict(
+                # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time:
+                # https://api.slack.com/docs/message-attachments#attachment_limits
+                self._send_version_card(to, project=project, card_dict=dict(
                     self._get_version_card(project),
                     **{'New Version Name': new_version}
-                )
+                ))
+                bumped_counter += 1
             except NoJIRAIssuesFoundError as exc:
                 failure_message = (  # TODO: consider putting this information in card fields instead
                     'Since `{final}`, {project} had {merge_summary} but <{jira_issues}|Jira> {exc_msg}.'
@@ -310,25 +313,29 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                         body=failure_message,
                         color='red',
                     )
-        if not card_dict:
+        if not bumped_counter > 0 and updated_projects:
             self.log.warning('%s: no projects updated.', stage.verb)
             return self.send_card(
                 in_reply_to=msg,
                 body='No projects updated.',
                 color='red',
             )
-        # FIXME: doesn't work as a yield for `send` because need to send to different channels
-        yield f"{len(card_dict)} projects updated: \n\t• " + '\n\t• '.join(list(card_dict))
-
-        for name, fields in card_dict.items():
-            # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time:
-            # https://api.slack.com/docs/message-attachments#attachment_limits
-            self._send_version_card(
-                msg,  # to=self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER']), TODO
-                project=name,
-                card_dict=fields,
+        if bumped_counter != len(updated_projects):
+            self.log.warning(
+                '%s: number of updated projects (%s) does not match number of bumped projects (%s)',
+                stage.verb,
+                len(updated_projects),
+                bumped_counter,
             )
-        return f'{len(card_dict)} / {len(self._get_project_names())} projects updated since last release.'
+            return self.send_card(
+                in_reply_to=msg,
+                body='No projects updated.',
+                color='red',
+            )
+        # FIXME: doesn't work as a yield for `send` because need to send to different channels
+        # yield f"{len(card_dict)} projects updated: \n\t• " + '\n\t• '.join(list(card_dict))
+
+        return f'{bumped_counter} / {len(self._get_project_names())} projects updated since last release.'
         # return "I have sent your sealed version set to the UAT channel. Awaiting their approval."
 
     def _get_merge_summary(self, project: str) -> str:
@@ -391,7 +398,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
 
     def _send_version_card(
             self,
-            message: Message,
+            to,
             project: str,
             card_dict: Dict[str, Union[str, int]],
     ) -> None:
@@ -404,7 +411,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         self.send_card(  # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time
             title=f'{project} - {card_dict.pop("New Version Name")}',
             link=card_dict.pop('GitHub Tag Comparison'),
-            in_reply_to=message,  # TODO: sometimes the message should be sent to a different channel
+            to=to,
             thumbnail=card_dict.pop('thumbnail'),
             fields=tuple(card_dict.items()),
             color='green',
