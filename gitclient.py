@@ -424,10 +424,10 @@ class GitClient:
         try:
             pre_tag = GitClient._get_latest_tag(self._get_origin(project), find_final=False)
             if not min_version:
-                logger.debug('%s get prerelease tag, min_version=None: %s', project, pre_tag.name)
+                logger.debug('%s get prerelease tag, min_version=None: %s', project, getattr(pre_tag, 'name', None))
                 return pre_tag
         except AttributeError:
-            logger.debug('%s get prerelease tag, min_version=%s: None', project, min_version)
+            logger.debug('%s get prerelease tag, min_version=%s: None', project, getattr(min_version, 'name', None))
             return None
         tag = pre_tag if GitClient.TagData.is_older_name(min_version.name, pre_tag.name) else None
         logger.debug('%s get prerelease tag, min_version=%s: %s', project, min_version, getattr(tag, 'name', None))
