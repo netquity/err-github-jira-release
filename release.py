@@ -267,18 +267,12 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         - jira: create version
         - backend: send cards and messages
         """
-        if stage == helpers.Stages.SEALED:
-            since_final = False
-            to = msg.frm  # FIXME: unused
-        elif stage == helpers.Stages.SENT:
-            since_final = True
-            to = self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER'])
-        else:
+        if stage not in [helpers.Stages.SEALED, helpers.Stages.SENT]:
             raise ValueError('Given stage=%s not supported.' % stage)
 
         failure_message = ''
         bumped_counter = 0
-        updated_projects = self.git.get_updated_repo_names(since_final)
+        updated_projects = self.git.get_updated_repo_names(not stage == helpers.Stages.SEALED)
         for project in updated_projects:
             # TODO: wrap in a try/except and roll back repos and jira on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
@@ -286,10 +280,15 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 new_version = self._bump_repo_tags(project, stage)
                 # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time:
                 # https://api.slack.com/docs/message-attachments#attachment_limits
-                self._send_version_card(to, project=project, card_dict=dict(
-                    self._get_version_card(project),
-                    **{'New Version Name': new_version}
-                ))
+                self._send_version_card(
+                    msg.frm if stage == helpers.Stages.SEALED
+                    else self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER']),
+                    project=project,
+                    card_dict=dict(
+                        self._get_version_card(project),
+                        **{'New Version Name': new_version}
+                    ),
+                )
                 bumped_counter += 1
             except NoJIRAIssuesFoundError as exc:
                 failure_message = (  # TODO: consider putting this information in card fields instead
@@ -313,25 +312,17 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                         body=failure_message,
                         color='red',
                     )
+        warning_message = ''
         if not bumped_counter > 0 and updated_projects:
-            self.log.warning('%s: no projects updated.', stage.verb)
-            return self.send_card(
-                in_reply_to=msg,
-                body='No projects updated.',
-                color='red',
+            warning_message = f'{stage.verb}: no projects updated.'
+        elif bumped_counter != len(updated_projects):
+            warning_message = (
+                f'{stage.verb}: number of updated projects ({len(updated_projects)}) '
+                'does not match number of bumped projects ({bumped_counter})'
             )
-        if bumped_counter != len(updated_projects):
-            self.log.warning(
-                '%s: number of updated projects (%s) does not match number of bumped projects (%s)',
-                stage.verb,
-                len(updated_projects),
-                bumped_counter,
-            )
-            return self.send_card(
-                in_reply_to=msg,
-                body='No projects updated.',
-                color='red',
-            )
+        if warning_message:
+            self.log.warning(warning_message)
+            return self.send_card(in_reply_to=msg, body=warning_message, color='red',)
         # FIXME: doesn't work as a yield for `send` because need to send to different channels
         # yield f"{len(card_dict)} projects updated: \n\t• " + '\n\t• '.join(list(card_dict))
 
