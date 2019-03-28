@@ -4,6 +4,7 @@ import errno
 import logging
 import os
 
+from functools import partialmethod
 from typing import List, Mapping, Dict, Union, Optional
 
 from errbot import BotPlugin, botcmd, arg_botcmd, ValidationException
@@ -21,6 +22,11 @@ try:
     from github import Github
 except ImportError:
     logger.error("Please install 'jira' and 'pygithub' Python packages")
+
+MISSING_ERROR_MESSAGE = (
+    'Error raised while trying to {stage} a release, but error '
+    'key `{key}` does not exist in the `error_messages` dictionary.'
+)
 
 
 class Release(BotPlugin):  # pylint:disable=too-many-ancestors
@@ -54,6 +60,16 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         - be discarded prior to the next standard release
         - not contain any database migrations
     """
+    error_messages = {
+        'no_jira_issues': '{project}: no <{issues_url}|Jira issues> found ({merge_summary}).',
+        'invalid_transition': 'Invalid stage transition attempted when bumping {project}.',
+        'invalid_version': 'Invalid pre_version given when bumping {project}.',
+        'none_updated': '{stage.verb}: no projects updated.',
+        'mismatched_updates': (
+            '{stage}: number of updated projects ({updated_projects}) '
+            'does not match number of bumped projects ({bumped_counter}).'
+        ),
+    }
 
     def activate(self):
         if not self.config:
@@ -185,13 +201,16 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         - jira: create version
         - backend: send cards and messages
         """
+        # TODO: need to propagate errors and revert all changes if anything fails
+        fail = partialmethod(self._fail, stage=stage)
+
         if stage not in [helpers.Stages.SEALED, helpers.Stages.SENT]:
             raise ValueError('Given stage=%s not supported.' % stage)
 
-        failure_message = ''
         bumped_counter = 0
         updated_projects = self.git.get_updated_repo_names(not stage == helpers.Stages.SEALED)
         for project in updated_projects:
+            fail_project = partialmethod(fail, project=project)  # just adding project keyword
             # TODO: wrap in a try/except and roll back repos and jira on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
             try:
@@ -208,44 +227,47 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     ),
                 )
                 bumped_counter += 1
-            except NoJIRAIssuesFoundError as exc:
-                failure_message = (  # TODO: consider putting this information in card fields instead
-                    'Since `{final}`, {project} had {merge_summary} but <{jira_issues}|Jira> {exc_msg}.'
-                ).format(
-                    final=self.git.get_final_tag(project).name,
-                    project=project,
+            except NoJIRAIssuesFoundError:
+                fail_project(
+                    'no_jira_issues',
+                    issues_url=self.jira.get_latest_issues_url(self._get_project_key(project)),
                     merge_summary=self._get_merge_summary(project),
-                    jira_issues=self.jira.get_latest_issues_url(self._get_project_key(project)),
-                    exc_msg=str(exc)[0].lower() + str(exc)[1:],  # lower first letter of exc message
                 )
             except helpers.InvalidStageTransitionError:
-                failure_message = f'Invalid stage transition attempted when bumping {project}'
+                fail_project('invalid_transition')
             except helpers.InvalidVersionNameError:
-                failure_message = f'Invalid pre_version given when bumping {project}'
-            finally:
-                if failure_message:
-                    self.log.exception(failure_message,)
-                    return self.send_card(  # pylint:disable=lost-exception
-                        in_reply_to=msg,
-                        body=failure_message,
-                        color='red',
-                    )
-        warning_message = ''
+                fail_project('invalid_version')
+
         if not bumped_counter > 0 and updated_projects:
-            warning_message = f'{stage.verb}: no projects updated.'
-        elif bumped_counter != len(updated_projects):
-            warning_message = (
-                f'{stage.verb}: number of updated projects ({len(updated_projects)}) '
-                'does not match number of bumped projects ({bumped_counter})'
+            return fail('none_updated', stage.verb)
+        if bumped_counter != len(updated_projects):
+            return fail(
+                'mismatched_updates',
+                stage=stage.verb,
+                updated_projects=len(updated_projects),
+                bumped_counter=bumped_counter,
             )
-        if warning_message:
-            self.log.warning(warning_message)
-            return self.send_card(in_reply_to=msg, body=warning_message, color='red',)
         # FIXME: doesn't work as a yield for `send` because need to send to different channels
         # yield f"{len(card_dict)} projects updated: \n\t• " + '\n\t• '.join(list(card_dict))
 
         return f'{bumped_counter} / {len(self._get_project_names())} projects updated since last release.'
         # return "I have sent your sealed version set to the UAT channel. Awaiting their approval."
+
+    def _fail(self, key: str, to, stage: helpers.Stages, **kwargs) -> None:
+        """A helper method that simply sends an error message and logs it"""
+        self.log.debug('Entering _fail: key=%s, stage=%s', key, stage)
+        import sys
+        if sys.exc_info()[0] is not None:
+            self.log.exception('An exception occurred while performing a release')
+
+        try:
+            msg = self.error_messages[key]
+        except KeyError:
+            self.log.error('Unknown error raised when release stage=%s, key=%s', stage, key)
+            msg = MISSING_ERROR_MESSAGE.format(stage=stage, key=key)
+        message_string = msg.format(**kwargs)
+        self.log.warning(message_string)
+        return self.send_card(to=to, body=message_string, color='red',)
 
     def _get_merge_summary(self, project: str) -> str:
         """Return a link to GitHub's issue search showing the merged PRs """
