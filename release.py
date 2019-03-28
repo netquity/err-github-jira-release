@@ -377,7 +377,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 'Previous Version': f'<{final.url}|{final.name}>',
                 'Previous vCommit': final.sha,
 
-                'Merge Count': git.get_merge_count(),  # TODO: use _get_merge_summary?
+                'Merge Count': self._get_merge_summary(project),
                 # TODO: it would be nice to be able to dynamically pass in functions for fields to show up on the card
                 'New Migrations': git.get_migration_count(),  # FIXME: too django-specific
 
