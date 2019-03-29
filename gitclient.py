@@ -86,7 +86,7 @@ class GitClient:
 
         def __init__(self, project: str, tag: Tag):
             if not isinstance(tag, Tag):
-                raise ValueError(
+                raise TypeError(
                     f'Inappropriate type: `tag` argument must be of type `github.Tag.Tag` but got `{type(tag)}`'
                 )
             self._project = project
