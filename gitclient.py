@@ -9,17 +9,20 @@ import shutil
 import sys
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from functools import partial
+from functools import partial, lru_cache
 from inspect import getfullargspec
 from subprocess import CompletedProcess, CalledProcessError
 from collections import namedtuple
 
-from typing import Callable, List, Generator, Optional, Dict
+
+from typing import Callable, List, Generator, Optional, Dict, NamedTuple
 
 from github import Github
 from github.Repository import Repository
 from github.Tag import Tag
 from github.PaginatedList import PaginatedList
+
+from packaging.version import parse, InvalidVersion
 
 import helpers
 
@@ -28,9 +31,21 @@ MergeLog = namedtuple('MergeLog', ['key', 'sha'])  # jira ticket key and commit 
 
 DOMAIN = 'https://github.com'
 
+TagTup = namedtuple('TagTup', ['sha', 'name', 'date'])  # TODO: rename
+
 
 class GitCommandError(Exception):
     """A git command has failed"""
+
+
+@lru_cache(maxsize=500)
+def cached_parse(tag_name: str):
+    """Parse the tag using `packaging.version`
+
+    Since tag names include the short commit SHA,
+    they should be unique enough to cache this way.
+    """
+    return parse(tag_name)
 
 
 def format_version(version: str) -> str:
@@ -520,6 +535,45 @@ class GitClient:
             ['log', f'{tag.name}...origin/develop', '--merges', '--oneline', *flags]
         ).stdout.replace('"', '').splitlines()[:-1]  # remove last entry as it's the update from master
 
+    def _fetch_tags(self, project: str) -> None:
+        """Fetch the project's tags from origin to its local repo"""
+        self._execute_project_git(
+            project,
+            ['fetch', '--tags'],
+        )
+
+    def _get_tag_lines(self, project: str) -> List[str]:
+        """Get stdout lines from `git tag`
+
+        Each one should include commit SHA, tag name, and committer date.
+
+        Some may be malformed as projects could have used different versioning schemes and tagging approaches in the
+        past. This method does not filter them out, but at some point they should be filtered to be consistent with the
+        versioning scheme used throughout this plugin.
+        """
+        tag_lines = self._execute_project_git(
+            project,
+            ["tag", "--format='%(objectname:short)", "%(refname:short)", "%(committerdate:iso8601-strict)'"]
+        ).stdout.strip().splitlines()
+        # e.g. [['efdf7a56', 'v3.1.0', '2017-11-23T19:13:52+00:00'], ...]
+        logger.debug('%s: got %s tags from `git tag`', project, len(tag_lines))
+        return [tag_line.split() for tag_line in tag_lines]
+
+    def _get_local_tags(self, project: str) -> List['TagTup']:
+        """Get a project's tags from the local repo, not origin
+
+        Returned list is sorted in descending order by version name using `packaging.version`.
+        """
+        tags = []
+        tag_lines = self._get_tag_lines(project)
+        for unparsed_tag in tag_lines:
+            # filters out "bad" tags and logs each one
+            if GitClient._is_unparsed_tag_valid(project, unparsed_tag):
+                tags.append(TagTup(*unparsed_tag))
+                logger.debug('%s: successfully parsed tag %s', project, tags[-1].name)
+        logger.debug('%s: %s/%s tags validated', project, len(tag_lines), len(tags))
+        return sorted(tags, key=cached_parse, reverse=True)  # sort using `packaging.version` with most recent first
+
     def _backup_repo(self, project: str) -> str:
         """Create a backup of the entire local repo folder and return the destination
 
@@ -597,6 +651,55 @@ class GitClient:
             )
         except ValueError:
             return None
+
+    @staticmethod
+    def _is_unparsed_tag_valid(project: str, unparsed_tag: List[str]) -> bool:
+        def is_correct_field_length(tag_fields: List[str]) -> bool:
+            if len(tag_fields) == len(TagTup._fields):
+                return True
+            logger.warning(
+                '%s: The given tag_string (tagtup %s) contains %s fields, expected %s; excluding from list',
+                project,
+                tag_fields[1] if len(tag_fields) >= 2 else 'MISSINGTAG',
+                len(tag_fields),
+                len(TagTup._fields),
+            )
+            return False
+
+        def is_correct_version_format(tag_fields: List[str]) -> bool:
+            if tag_fields[1][:1] == 'v':
+                return True
+            logger.warning(
+                (
+                    '%s: The given tag_string (tagtup %s) contains a malformed '
+                    'named, must start with "v"; excluding from list',
+                ),
+                project,
+                tag_fields[1],
+            )
+            return False
+
+        def is_parsable(tag_name: str):
+            try:
+                cached_parse(tag_name)
+                return True
+            except InvalidVersion:
+                logger.warning(
+                    (
+                        '%s: the given tag_name (tagtup %s) could not be parsed '
+                        'with `packaging.version.parse`; excluding from list'
+                    ),
+                    project,
+                    tag_name,
+                )
+                return False
+
+        return (
+            is_correct_field_length(unparsed_tag)
+            and is_correct_version_format(unparsed_tag)
+            and is_parsable(unparsed_tag[1])
+        )
+
 
     @staticmethod
     def _get_tags(origin: Repository) -> PaginatedList:
