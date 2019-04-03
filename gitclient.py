@@ -243,20 +243,6 @@ class GitClient:
             for project_name in config['PROJECT_NAMES']
         ]
 
-    def get_updated_repo_names(self, since_final: bool = True) -> List[str]:
-        """
-        Get a list of the full names of the repos that have commits to develop since either the last final or
-        prerelease
-
-        Note that when the develop branch is updated immediately after a release, it creates a merge commit, which is
-        not counted for the purposes of this method.
-
-        :param since_final: if True, look for updates since the latest final tag; otherwise, since latest prerelease
-        """
-        project_names = [project.name for project in self._get_updated_projects(self.projects, since_final)]
-        logger.debug('Get updated projects: %s/%s since_final=%s', len(project_names), len(self.projects), since_final)
-        return project_names
-
     def get_updated_projects(self, since_final: bool = True) -> List['ProjectPath']:
         """Get a list of the `origin` repos that have commits to develop since either the last final or prerelease
 

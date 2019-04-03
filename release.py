@@ -10,8 +10,8 @@ from typing import List, Mapping, Dict, Union, Optional
 from errbot import BotPlugin, botcmd, arg_botcmd, ValidationException
 from errbot.botplugin import recurse_check_structure
 from errbot.backends.base import Message
-from gitclient import GitClient
 from jiraclient import JiraClient, NoJIRAIssuesFoundError
+from gitclient import GitClient, ProjectPath
 
 import helpers
 
@@ -138,60 +138,63 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     def sign(self, msg: Message, args):  # pylint:disable=unused-argument
         from gitclient import GitCommandError
         fields = ()
-        updated_projects = self.git.get_updated_repo_names()
+        updated_projects = self.git.get_updated_projects()
         for project in updated_projects:
-            with self.git.project_git(project) as git:
-                key = self._get_project_key(project)
-                final = git.get_final_tag()
-                # new_version_name = self._bump_repo_tags(project, helpers.Stages.SIGNED)  # NOTE: comes with no `v`
-                new_version_name = self.jira.get_pending_version_name(
-                    key,
-                    helpers.Stages.SIGNED,
-                    git.get_rev_hash(ref="origin/develop")[:7],
-                    final.name,
-                    getattr(git.get_prerelease_tag(min_version=final), 'name', None),
-                )
-                jira_version = self.jira.create_version(
-                    key,
-                    new_version_name,
-                    released=True,
-                )
-                self.jira.set_fix_version(
-                    key,
-                    jira_version.name,
-                    is_hotfix=False,  # FIXME: need to actually do something for hotfixes
-                )
-                release_notes = self.jira.get_release_notes(jira_version, git.get_merge_logs())
-                is_hotfix = False  # TODO: TEMPORARY SHIM; REMOVE!!!
-                try:
-                    if is_hotfix:
-                        # TODO: need better exception handling
-                        git.add_release_notes_to_develop(new_version_name, release_notes)
-                    else:
-                        # FIXME: need to get THIS sha, not the one of most recent commit earlier
-                        git.merge_and_create_release_commit(
-                            version_name=new_version_name,
-                            release_notes=release_notes,
-                        )
-                except GitCommandError as exc:  # TODO: should the exception be changed to GitCommandError?
-                    self.log.exception(
-                        'Unable to merge release branch to master and create release commit.'
+            key = self._get_project_key(project)
+            final = project.get_final_tag()
+            # new_version_name = self._bump_repo_tags(project, helpers.Stages.SIGNED)  # NOTE: comes with no `v`
+            # FIXME: catch InvalidVersionNameError and InvalidStageTransitionError
+            new_version_name = self.jira.get_pending_version_name(
+                key,
+                helpers.Stages.SIGNED,
+                project.get_rev_hash(ref="origin/develop")[:7],
+                final.name,
+                getattr(project.get_prerelease_tag(min_version=final), 'name', None),
+            )
+            jira_version = self.jira.create_version(
+                key,
+                new_version_name,
+                released=True,
+            )
+            self.jira.set_fix_version(
+                key,
+                jira_version.name,
+                is_hotfix=False,  # FIXME: need to actually do something for hotfixes
+            )
+            # TODO: add release notes to changelog file
+            # FIXME: wrong version number
+            # FIXME: catch IssueMergesCountMismatchError
+            release_notes = self.jira.get_release_notes(jira_version, project.get_merge_logs())
+            is_hotfix = False  # TODO: TEMPORARY SHIM; REMOVE!!!
+            try:
+                if is_hotfix:
+                    # TODO: need better exception handling
+                    project.add_release_notes_to_develop(new_version_name, release_notes)
+                else:
+                    # FIXME: need to get THIS sha, not the one of most recent commit earlier
+                    project.merge_and_create_release_commit(
+                        version_name=new_version_name,
+                        release_notes=release_notes,
                     )
-                    exc_message = JiraClient.delete_version(
-                        key,
-                        jira_version,
-                        'git',
-                    )
-                    return exc_message
+            except GitCommandError as exc:  # TODO: should the exception be changed to GitCommandError?
+                self.log.exception(
+                    'Unable to merge release branch to master and create release commit.'
+                )
+                exc_message = JiraClient.delete_version(
+                    key,
+                    jira_version,
+                    'git',
+                )
+                return exc_message
 
-                # Need the merge commit sha as part of the version metadata
-                new_version_name = helpers.change_sha(new_version_name, git.get_ref()[:7])
-                self.jira.change_version_name(jira_version, new_version_name)
-                git.create_tag(tag_name=new_version_name)
-                git.create_ref(version_name=new_version_name)
-                git.create_release(release_notes=release_notes, version_name=new_version_name)
-                if not is_hotfix:
-                    git.update_develop()
+            # Need the merge commit sha as part of the version metadata
+            new_version_name = helpers.change_sha(new_version_name, project.ref[:7])
+            self.jira.change_version_name(jira_version, new_version_name)
+            project.create_tag(tag_name=new_version_name)
+            project.create_ref(version_name=new_version_name)
+            project.create_release(release_notes=release_notes, version_name=new_version_name)
+            if not is_hotfix:
+                project.update_develop()
 
     def _bump_projects_set(self, msg: Message, stage: helpers.Stages) -> Optional[str]:
         """Transition the entire set of updated projects to the given stage
@@ -208,9 +211,8 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             raise ValueError('Given stage=%s not supported.' % stage)
 
         bumped_counter = 0
-        updated_projects = self.git.get_updated_repo_names(not stage == helpers.Stages.SEALED)
+        updated_projects = self.git.get_updated_projects(not stage == helpers.Stages.SEALED)
         for project in updated_projects:
-            fail_project = partialmethod(fail, project=project)  # just adding project keyword
             # TODO: wrap in a try/except and roll back repos and jira on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
             try:
@@ -228,15 +230,15 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 )
                 bumped_counter += 1
             except NoJIRAIssuesFoundError:
-                fail_project(
+                fail(
                     'no_jira_issues',
                     issues_url=self.jira.get_latest_issues_url(self._get_project_key(project)),
                     merge_summary=self._get_merge_summary(project),
                 )
             except helpers.InvalidStageTransitionError:
-                fail_project('invalid_transition')
+                fail('invalid_transition')
             except helpers.InvalidVersionNameError:
-                fail_project('invalid_version')
+                fail('invalid_version')
 
         if not bumped_counter > 0 and updated_projects:
             return fail('none_updated', stage.verb)
@@ -269,14 +271,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         self.log.warning(message_string)
         return self.send_card(to=to, body=message_string, color='red',)
 
-    def _get_merge_summary(self, project: str) -> str:
-        """Return a link to GitHub's issue search showing the merged PRs """
-        return '<{url}|{pr_count} merged PR(s)>'.format(
-            url=self.git.get_merged_prs_url(project),
-            pr_count=self.git.get_merge_count(project),
-        )
-
-    def _get_project_root(self, project: str) -> str:
+    def _get_project_root(self, project: str) -> str:  # TODO: unused - delete
         """Get the root of the project's Git repo locally."""
         return self.config['REPOS_ROOT'] + project
 
@@ -284,10 +279,10 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         """Get the list of project names from the configuration"""
         return list(self.config['projects'])
 
-    def _get_project_key(self, project: str) -> str:
+    def _get_project_key(self, project: ProjectPath) -> str:
         """Get the Jira project key for the given project name"""
         # TODO: catch `KeyError`
-        return self.config['projects'][project]
+        return self.config['projects'][project.name]
 
     def _get_jira_config(self) -> dict:
         """Return data required for initializing JiraClient"""
@@ -306,31 +301,31 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             'PROJECT_NAMES': self._get_project_names(),
         }
 
-    def _get_version_card(self, project: str) -> Dict:
-        with self.git.project_git(project) as git:
-            final = git.get_final_tag()
-            project_key = self._get_project_key(project)
-            return {
-                'Key': project_key,
-                'Release Type': self.jira.get_release_type(project_key),
+    def _get_version_card(self, project: ProjectPath) -> Dict:
+        self.log.debug('%s: getting version card', project.name)
+        final = project.get_final_tag()
+        project_key = self._get_project_key(project)
+        return {
+            'Key': project_key,
+            'Release Type': self.jira.get_release_type(project_key),
 
-                'Previous Version': f'<{final.url}|{final.name}>',
-                'Previous vCommit': final.sha,
+            'Previous Version': f'<{final.url}|{final.name}>',
+            'Previous vCommit': final.sha,
 
-                'Merge Count': self._get_merge_summary(project),
-                # TODO: it would be nice to be able to dynamically pass in functions for fields to show up on the card
-                'New Migrations': git.get_migration_count(),  # FIXME: too django-specific
+            'Merge Count': Release._get_merge_summary(project),
+            # TODO: it would be nice to be able to dynamically pass in functions for fields to show up on the card
+            'New Migrations': project.get_migration_count(),  # FIXME: too django-specific
 
-                # To be removed for `fields`
-                'GitHub Tag Comparison': git.get_compare_url(),
-                # TODO: find a good public source for thumbnails; follow license
-                'thumbnail': 'https://static.thenounproject.com/png/1662598-200.png',
-            }
+            # To be removed for `fields`
+            'GitHub Tag Comparison': project.get_compare_url(),
+            # TODO: find a good public source for thumbnails; follow license
+            'thumbnail': 'https://static.thenounproject.com/png/1662598-200.png',
+        }
 
     def _send_version_card(
             self,
             to,
-            project: str,
+            project: ProjectPath,
             card_dict: Dict[str, Union[str, int]],
     ) -> None:
         """Send the Slack card containing version set information
@@ -340,32 +335,31 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         :param card_dict: a dict of values to be displayed on the version card
         """
         self.send_card(  # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time
-            title=f'{project} - {card_dict.pop("New Version Name")}',
+            title=f'{project.name} - {card_dict.pop("New Version Name")}',
             link=card_dict.pop('GitHub Tag Comparison'),
             to=to,
             thumbnail=card_dict.pop('thumbnail'),
             fields=tuple(card_dict.items()),
             color='green',
         )
-        self.log.debug('%s sent version card', project)
+        self.log.debug('%s sent version card', project.name)
 
-    def _bump_repo_tags(self, project: str, stage: str) -> str:
+    def _bump_repo_tags(self, project: ProjectPath, stage: str) -> str:
         """Tag the project's repo with the next version's tags and push to origin
 
         :param stage: the release stage to transition into (seal, send, sign)
         """
-        with self.git.project_git(project) as git:
-            final = git.get_final_tag()
-            project_key = self._get_project_key(project)
-            new_version = self.jira.get_pending_version_name(
-                project_key,
-                stage,
-                git.get_rev_hash(ref="origin/develop")[:7],
-                final.name,
-                getattr(git.get_prerelease_tag(min_version=final), 'name', None),
-            )
-            git.tag_develop(tag_name=new_version)
-            return new_version
+        final = project.get_final_tag()
+        project_key = self._get_project_key(project)
+        new_version = self.jira.get_pending_version_name(
+            project_key,
+            stage,
+            project.get_rev_hash(ref="origin/develop")[:7],
+            final.name,
+            getattr(project.get_prerelease_tag(min_version=final), 'name', None),
+        )
+        project.tag_develop(tag_name=new_version)
+        return new_version
 
     def _setup_repos(self):
         """Clone the projects in the configuration into the `REPOS_ROOT` if they do not exist already."""
@@ -383,3 +377,11 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     ['git', 'clone', f"git@github.com:{project}.git", project],
                     cwd=self.config['REPOS_ROOT'],
                 )
+
+    @staticmethod
+    def _get_merge_summary(project: ProjectPath) -> str:
+        """Return a link to GitHub's issue search showing the merged PRs """
+        return '<{url}|{pr_count} merged PR(s)>'.format(
+            url=project.get_merged_prs_url(),
+            pr_count=project.get_merge_count(),
+        )
