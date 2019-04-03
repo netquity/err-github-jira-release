@@ -333,7 +333,6 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         """Get a list of namedtuples containing each merged PR, its Jira Key, and short SHA"""
         merges = []
         for log in self._get_merges_since(
-                self.name,
                 self.get_final_tag(),
                 '--pretty="%h %s"',
         ):
