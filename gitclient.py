@@ -183,7 +183,7 @@ class GitClient:
             return match(old_tag_name[1:], f"<{new_tag_name[1:]}")
 
         @staticmethod
-        def _is_unparsed_tag_valid(project: ProjectPath, unparsed_tag: List[str]) -> bool:
+        def _is_unparsed_tag_valid(project: 'ProjectPath', unparsed_tag: List[str]) -> bool:
             def is_correct_field_length(tag_fields: List[str]) -> bool:
                 if len(tag_fields) == len(TagTup._fields):
                     return True
@@ -578,7 +578,7 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         ref = self.ref[:7]
         return helpers.copytree(
             self.path,
-            self._get_backups_path(self.name),
+            self._get_backups_path(self),
             ref,
         )
 
@@ -590,7 +590,7 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         # create a backup of the backup so it can be moved using the atomic `shutil.move`
         backup_swap = helpers.copytree(
             src=backup_path,
-            dst_parent=self._get_backups_path(self.name),
+            dst_parent=self._get_backups_path(self),
             dst=self.ref[:7] + '.swap',
         )
         # move the backup to the normal repo location
