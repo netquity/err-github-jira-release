@@ -182,6 +182,54 @@ class GitClient:
             from semver import match
             return match(old_tag_name[1:], f"<{new_tag_name[1:]}")
 
+        @staticmethod
+        def _is_unparsed_tag_valid(project: str, unparsed_tag: List[str]) -> bool:
+            def is_correct_field_length(tag_fields: List[str]) -> bool:
+                if len(tag_fields) == len(TagTup._fields):
+                    return True
+                logger.warning(
+                    '%s: The given tag_string (tagtup %s) contains %s fields, expected %s; excluding from list',
+                    project,
+                    tag_fields[1] if len(tag_fields) >= 2 else 'MISSINGTAG',
+                    len(tag_fields),
+                    len(TagTup._fields),
+                )
+                return False
+
+            def is_correct_version_format(tag_fields: List[str]) -> bool:
+                if tag_fields[1][:1] == 'v':
+                    return True
+                logger.warning(
+                    (
+                        '%s: The given tag_string (tagtup %s) contains a malformed '
+                        'named, must start with "v"; excluding from list',
+                    ),
+                    project,
+                    tag_fields[1],
+                )
+                return False
+
+            def is_parsable(tag_name: str):
+                try:
+                    cached_parse(tag_name)
+                    return True
+                except InvalidVersion:
+                    logger.warning(
+                        (
+                            '%s: the given tag_name (tagtup %s) could not be parsed '
+                            'with `packaging.version.parse`; excluding from list'
+                        ),
+                        project,
+                        tag_name,
+                    )
+                    return False
+
+            return (
+                is_correct_field_length(unparsed_tag)
+                and is_correct_version_format(unparsed_tag)
+                and is_parsable(unparsed_tag[1])
+            )
+
     __slots__ = ['repos_root', 'projects', 'github']
 
     def __init__(self, config: dict):
@@ -602,7 +650,7 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         tag_lines = ProjectPath._get_tag_lines(project)
         for unparsed_tag in tag_lines:
             # filters out "bad" tags and logs each one
-            if ProjectPath._is_unparsed_tag_valid(project.name, unparsed_tag):
+            if GitClient.TagData._is_unparsed_tag_valid(project.name, unparsed_tag):
                 tags.append(TagTup(*unparsed_tag))
                 logger.debug('%s: successfully parsed tag %s', project.name, tags[-1].name)
         logger.debug('%s: %s/%s tags validated', project.name, len(tags), len(tag_lines))
@@ -645,54 +693,6 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
             )
         except ValueError:
             return None
-
-    @staticmethod
-    def _is_unparsed_tag_valid(project: str, unparsed_tag: List[str]) -> bool:
-        def is_correct_field_length(tag_fields: List[str]) -> bool:
-            if len(tag_fields) == len(TagTup._fields):
-                return True
-            logger.warning(
-                '%s: The given tag_string (tagtup %s) contains %s fields, expected %s; excluding from list',
-                project,
-                tag_fields[1] if len(tag_fields) >= 2 else 'MISSINGTAG',
-                len(tag_fields),
-                len(TagTup._fields),
-            )
-            return False
-
-        def is_correct_version_format(tag_fields: List[str]) -> bool:
-            if tag_fields[1][:1] == 'v':
-                return True
-            logger.warning(
-                (
-                    '%s: The given tag_string (tagtup %s) contains a malformed '
-                    'named, must start with "v"; excluding from list',
-                ),
-                project,
-                tag_fields[1],
-            )
-            return False
-
-        def is_parsable(tag_name: str):
-            try:
-                cached_parse(tag_name)
-                return True
-            except InvalidVersion:
-                logger.warning(
-                    (
-                        '%s: the given tag_name (tagtup %s) could not be parsed '
-                        'with `packaging.version.parse`; excluding from list'
-                    ),
-                    project,
-                    tag_name,
-                )
-                return False
-
-        return (
-            is_correct_field_length(unparsed_tag)
-            and is_correct_version_format(unparsed_tag)
-            and is_parsable(unparsed_tag[1])
-        )
 
     @staticmethod
     def _get_merged_prs_url(project: str, start_date: str, end_date: str) -> str:
