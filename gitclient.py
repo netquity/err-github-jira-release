@@ -209,15 +209,17 @@ class GitClient:
         logger.debug('Get updated projects: %s/%s since_final=%s', len(project_names), len(self.projects), since_final)
         return project_names
 
-    def _get_updated_projects(self, projects: List['ProjectPath'], since_final: bool = True) -> List['ProjectPath']:
+    def get_updated_projects(self, since_final: bool = True) -> List['ProjectPath']:
         """Get a list of the `origin` repos that have commits to develop since either the last final or prerelease
 
         :param since_final: if True, look for updates since the latest final tag; otherwise, since latest prerelease
         """
-        return [
-            project for project in projects
+        updated_projects = [
+            project for project in self.projects
             if project._is_updated_since(since_final)
         ]
+        logger.debug('Got updated projects: %s/%s updated', len(updated_projects), len(self.projects))
+        return updated_projects
 
 
 class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: rename, maybe to just `project`
@@ -317,12 +319,13 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
 
     def get_merge_count(self) -> int:
         """Get the number of merges to develop since the last final tag"""
-        return self._get_merge_count_since(
-            ProjectPath._get_latest_tag(
-                project=self,
-                find_final=True,
-            )
+        latest_tag = ProjectPath._get_latest_tag(
+            project=self,
+            find_final=True,
         )
+        merge_count = self._get_merge_count_since(latest_tag)
+        logger.debug('%s: %s merges to develop since %s', self.name, merge_count, latest_tag.name)
+        return merge_count
 
     def get_prerelease_tag(self, min_version: Optional[GitClient.TagData] = None) -> Optional[GitClient.TagData]:
         """Get the latest prerelease tag name
