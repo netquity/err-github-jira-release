@@ -517,7 +517,7 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
     def get_merged_prs_url(self) -> str:
         """Get the URL to see merged PRs since the latest final on GitHub"""
         return ProjectPath._get_merged_prs_url(
-            self.name,
+            self,
             self.get_final_tag().date,
             datetime.now(timezone.utc).replace(microsecond=0).isoformat().split('+')[0],
         )
