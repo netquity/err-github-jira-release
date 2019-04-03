@@ -183,13 +183,13 @@ class GitClient:
             return match(old_tag_name[1:], f"<{new_tag_name[1:]}")
 
         @staticmethod
-        def _is_unparsed_tag_valid(project: str, unparsed_tag: List[str]) -> bool:
+        def _is_unparsed_tag_valid(project: ProjectPath, unparsed_tag: List[str]) -> bool:
             def is_correct_field_length(tag_fields: List[str]) -> bool:
                 if len(tag_fields) == len(TagTup._fields):
                     return True
                 logger.warning(
                     '%s: The given tag_string (tagtup %s) contains %s fields, expected %s; excluding from list',
-                    project,
+                    project.name,
                     tag_fields[1] if len(tag_fields) >= 2 else 'MISSINGTAG',
                     len(tag_fields),
                     len(TagTup._fields),
@@ -204,7 +204,7 @@ class GitClient:
                         '%s: The given tag_string (tagtup %s) contains a malformed '
                         'named, must start with "v"; excluding from list',
                     ),
-                    project,
+                    project.name,
                     tag_fields[1],
                 )
                 return False
@@ -219,7 +219,7 @@ class GitClient:
                             '%s: the given tag_name (tagtup %s) could not be parsed '
                             'with `packaging.version.parse`; excluding from list'
                         ),
-                        project,
+                        project.name,
                         tag_name,
                     )
                     return False
@@ -597,11 +597,11 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         shutil.rmtree(self.path)
         return shutil.move(src=backup_swap, dst=self.path)
 
-    def _get_backups_path(self, project: str = None) -> str:
+    def _get_backups_path(self, project: 'ProjectPath' = None) -> str:
         """Get the backups dir path, either for all projects, or for the given project name"""
         return os.path.join(
             *[self.repos_root, '.backups']
-            + ([project] if project else [])
+            + ([project.name] if project else [])
         )
 
     @staticmethod
@@ -681,7 +681,7 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
             return None
 
     @staticmethod
-    def _get_merged_prs_url(project: str, start_date: str, end_date: str) -> str:
+    def _get_merged_prs_url(project: 'ProjectPath', start_date: str, end_date: str) -> str:
         """Get the URL to see merged PRs in a date range on GitHub
 
         >>> GitClient._get_merged_prs_url('foo/bar-prj', '2018-01-01T22:02:39+00:00', '2018-01-02T22:02:39+00:00')[:46]
@@ -689,4 +689,4 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         >>> GitClient._get_merged_prs_url('foo/bar-prj', '2018-01-01T22:02:39+00:00', '2018-01-02T22:02:39+00:00')[46:]
         'is:pr+is:closed+merged:2018-01-01T22:02:39+00:00..2018-01-02T22:02:39+00:00'
         """
-        return f'{DOMAIN}/{project}/pulls?utf8=✓&q=is:pr+is:closed+merged:{start_date}..{end_date}'
+        return f'{DOMAIN}/{project.name}/pulls?utf8=✓&q=is:pr+is:closed+merged:{start_date}..{end_date}'

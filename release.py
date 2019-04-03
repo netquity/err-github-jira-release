@@ -271,10 +271,6 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         self.log.warning(message_string)
         return self.send_card(to=to, body=message_string, color='red',)
 
-    def _get_project_root(self, project: str) -> str:  # TODO: unused - delete
-        """Get the root of the project's Git repo locally."""
-        return self.config['REPOS_ROOT'] + project
-
     def _get_project_names(self) -> List[str]:
         """Get the list of project names from the configuration"""
         return list(self.config['projects'])
