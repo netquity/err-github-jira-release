@@ -121,6 +121,12 @@ class JiraClient:
                     version_name=version.name,
                 ),
             )
+            logger.debug(
+                '%s: %s issues found for release notes, %s merge logs found in git',
+                project_name,
+                len(issues),
+                len(merge_logs),
+            )
 
             issues.sort(key=lambda issue: issue.key)
             if len(issues) != len(merge_logs):
@@ -132,7 +138,7 @@ class JiraClient:
                     version.name,
                 )
                 raise IssueMergesCountMismatchError(
-                    '%s got %s Jira issues but %s merged PRs.',
+                    '%s got %s Jira issues but %s merged PRs.' %
                     project_name,
                     len(issues),
                     len(merge_logs),
@@ -235,8 +241,9 @@ class JiraClient:
 
     def change_version_name(self, version: Version, new_name: str) -> Version:
         """Change the Jira version's name"""
-        version = version.update(name=new_name)
-        logger.info('Changed Jira version %s to %s', version.name, new_name)
+        original_name = version.name
+        version.update(name=new_name)
+        logger.info('Changed Jira version %s to %s', original_name, new_name)
         return version
 
     # Doesn't work, probably need to pull the logo from GitHub
