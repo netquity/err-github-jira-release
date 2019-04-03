@@ -636,7 +636,7 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         tag_lines = ProjectPath._get_tag_lines(project)
         for unparsed_tag in tag_lines:
             # filters out "bad" tags and logs each one
-            if GitClient.TagData._is_unparsed_tag_valid(project.name, unparsed_tag):
+            if GitClient.TagData._is_unparsed_tag_valid(project, unparsed_tag):
                 tags.append(TagTup(*unparsed_tag))
                 logger.debug('%s: successfully parsed tag %s', project.name, tags[-1].name)
         logger.debug('%s: %s/%s tags validated', project.name, len(tags), len(tag_lines))
