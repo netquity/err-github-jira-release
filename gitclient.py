@@ -19,7 +19,7 @@ from packaging.version import parse, InvalidVersion
 
 import helpers
 
-logger = logging.getLogger(__file__)
+logger = logging.getLogger(os.path.basename(__file__))
 MergeLog = namedtuple('MergeLog', ['key', 'sha'])  # jira ticket key and commit sha
 TagTup = namedtuple('TagTup', ['sha', 'name', 'date'])  # TODO: rename
 

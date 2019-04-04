@@ -5,6 +5,7 @@ to provide release-management capabilities and nothing more.
 """
 import datetime
 import logging
+import os
 
 from typing import Optional, List
 
@@ -15,7 +16,7 @@ from helpers import Stages
 from gitclient import MergeLog
 
 
-logger = logging.getLogger(__file__)
+logger = logging.getLogger(os.path.basename(__file__))
 
 
 try:

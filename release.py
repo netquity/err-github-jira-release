@@ -15,7 +15,7 @@ from gitclient import GitClient, ProjectPath
 
 import helpers
 
-logger = logging.getLogger(__file__)
+logger = logging.getLogger(os.path.basename(__file__))
 
 try:
     from jira import JIRA, JIRAError
