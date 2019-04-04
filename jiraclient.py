@@ -240,16 +240,13 @@ class JiraClient:
         logger.info('%s: created new Jira version %s (released=%s)', project_key.upper(), new_version, released)
         return version
 
-    def change_version_name(self, version: Version, new_name: str) -> Version:
+    @staticmethod
+    def change_version_name(version: Version, new_name: str) -> Version:
         """Change the Jira version's name"""
         original_name = version.name
         version.update(name=new_name)
         logger.info('Changed Jira version %s to %s', original_name, new_name)
         return version
-
-    # Doesn't work, probably need to pull the logo from GitHub
-    # def get_project_avatar(self, project_key: str) -> str:
-    #     return self.api.project(project_key).raw['avatarUrls']['48x48']
 
     @staticmethod
     def delete_version(project_key: str, version: Version, failed_command: str = 'JIRA') -> Optional[str]:
@@ -258,8 +255,7 @@ class JiraClient:
         Used to undo created versions when subsequent operations fail."""
         try:
             version.delete()  # Remove version from issues it's attached to
-            logger.info('%s: deleted Jira version %s', project_key.upper(), version.name)
-            return
+            return logger.info('%s: deleted Jira version %s', project_key.upper(), version.name)
         except JIRAError:
             exc_message = (
                 'Unable to complete JIRA request for project_key={} and unable to clean up new version={}'.format(
@@ -277,7 +273,6 @@ class JiraClient:
     @staticmethod
     def get_issue_search_string(project_key: str) -> str:
         """Search for issues in transition since the last release"""
-        # TODO: maybe we should search by some other field that unites all projects in the stack
         return 'project = %s ' % project_key.upper() + (
             'AND status = "closed" '
             'AND fixVersion = EMPTY '

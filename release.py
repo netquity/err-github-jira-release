@@ -7,7 +7,7 @@ import os
 from functools import partial
 from typing import List, Mapping, Dict, Union, Optional
 
-from errbot import BotPlugin, botcmd, arg_botcmd, ValidationException
+from errbot import BotPlugin, botcmd, ValidationException
 from errbot.botplugin import recurse_check_structure
 from jiraclient import JiraClient, NoJIRAIssuesFoundError
 from errbot.backends.base import Message, Identifier
@@ -176,7 +176,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                         version_name=new_version_name,
                         release_notes=release_notes,
                     )
-            except GitCommandError as exc:  # TODO: should the exception be changed to GitCommandError?
+            except GitCommandError:
                 self.log.exception(
                     'Unable to merge release branch to master and create release commit.'
                 )
@@ -189,7 +189,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
 
             # Need the merge commit sha as part of the version metadata
             new_version_name = helpers.change_sha(new_version_name, project.ref[:7])
-            self.jira.change_version_name(jira_version, new_version_name)
+            JiraClient.change_version_name(jira_version, new_version_name)
             project.create_tag(tag_name=new_version_name)
             project.create_ref(version_name=new_version_name)
             project.create_release(release_notes=release_notes, version_name=new_version_name)
