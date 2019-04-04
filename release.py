@@ -9,8 +9,8 @@ from typing import List, Mapping, Dict, Union, Optional
 
 from errbot import BotPlugin, botcmd, arg_botcmd, ValidationException
 from errbot.botplugin import recurse_check_structure
-from errbot.backends.base import Message
 from jiraclient import JiraClient, NoJIRAIssuesFoundError
+from errbot.backends.base import Message, Identifier
 from gitclient import GitClient, ProjectPath
 
 import helpers
@@ -205,7 +205,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         - backend: send cards and messages
         """
         # TODO: need to propagate errors and revert all changes if anything fails
-        fail = partial(self._fail, to=msg.frm, stage=stage)
+        fail = partial(self._fail, identifier=msg.frm, stage=stage)
 
         if stage not in [helpers.Stages.SEALED, helpers.Stages.SENT]:
             raise ValueError('Given stage=%s not supported.' % stage)
@@ -264,7 +264,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         return f'{bumped_counter} / {len(self._get_project_names())} projects updated since last release.'
         # return "I have sent your sealed version set to the UAT channel. Awaiting their approval."
 
-    def _fail(self, key: str, to, stage: helpers.Stages, **kwargs) -> None:
+    def _fail(self, key: str, identifier: Identifier, stage: helpers.Stages, **kwargs) -> None:
         """A helper method that simply sends an error message and logs it"""
         self.log.debug('Entering _fail: key=%s, stage=%s', key, stage)
         import sys
@@ -278,7 +278,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             msg = MISSING_ERROR_MESSAGE.format(stage=stage, key=key)
         message_string = msg.format(**kwargs)
         self.log.warning(message_string)
-        return self.send_card(to=to, body=message_string, color='red',)
+        return self.send_card(to=identifier, body=message_string, color='red',)
 
     def _get_project_names(self) -> List[str]:
         """Get the list of project names from the configuration"""
@@ -329,7 +329,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
 
     def _send_version_card(
             self,
-            to,
+            identifier: Identifier,
             project: ProjectPath,
             card_dict: Dict[str, Union[str, int]],
     ) -> None:
@@ -342,7 +342,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         self.send_card(  # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time
             title=f'{project.name} - {card_dict.pop("New Version Name")}',
             link=card_dict.pop('GitHub Tag Comparison'),
-            to=to,
+            to=identifier,
             thumbnail=card_dict.pop('thumbnail'),
             fields=tuple(card_dict.items()),
             color='green',
