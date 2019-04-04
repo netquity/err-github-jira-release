@@ -64,9 +64,9 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         'no_jira_issues': '{project}: no <{issues_url}|Jira issues> found ({merge_summary}).',
         'invalid_transition': 'Invalid stage transition attempted when bumping {project}.',
         'invalid_version': 'Invalid pre_version given when bumping {project}.',
-        'none_updated': '{stage.verb}: no projects updated.',
+        'none_updated': '{active_stage}: no projects updated.',
         'mismatched_updates': (
-            '{stage}: number of updated projects ({updated_projects}) '
+            '{active_stage}: number of updated projects ({updated_projects}) '
             'does not match number of bumped projects ({bumped_counter}).'
         ),
     }
@@ -232,6 +232,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             except NoJIRAIssuesFoundError:
                 fail(
                     'no_jira_issues',
+                    project=project.name,
                     issues_url=self.jira.get_latest_issues_url(self._get_project_key(project)),
                     merge_summary=self._get_merge_summary(project),
                 )
@@ -241,11 +242,11 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 fail('invalid_version')
 
         if not bumped_counter > 0 and updated_projects:
-            return fail('none_updated', stage.verb)
+            return fail('none_updated', active_stage=stage.verb)
         if bumped_counter != len(updated_projects):
             return fail(
                 'mismatched_updates',
-                stage=stage.verb,
+                active_stage=stage.verb,
                 updated_projects=len(updated_projects),
                 bumped_counter=bumped_counter,
             )
