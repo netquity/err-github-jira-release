@@ -6,7 +6,7 @@ from enum import Enum
 
 from errbot import ValidationException
 
-logger = logging.getLogger(__file__)
+logger = logging.getLogger(os.path.basename(__file__))
 
 
 class Stages(Enum):
