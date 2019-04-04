@@ -255,6 +255,16 @@ class GitClient:
         logger.debug('Got updated projects: %s/%s updated', len(updated_projects), len(self.projects))
         return updated_projects
 
+    def get_projects_in_stage(self, stage: helpers.Stages) -> Optional[List['ProjectPath']]:
+        """Get a list of projects for which the most recent tag is in the given stage"""
+        lowered_stage = stage.verb.lower()
+        projects = [
+            project for project in self.projects
+            if lowered_stage in ProjectPath._get_latest_tag(project, False).name.lower()
+        ]
+        logger.debug('Got projects in stage=%s: %s/%s updated', stage.name, len(projects), len(self.projects))
+        return projects
+
 
 class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: rename, maybe to just `project`
     """Projects have a path and a limited set of attributes that can be derived from it"""

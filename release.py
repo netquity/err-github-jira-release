@@ -4,7 +4,7 @@ import errno
 import logging
 import os
 
-from functools import partialmethod
+from functools import partial
 from typing import List, Mapping, Dict, Union, Optional
 
 from errbot import BotPlugin, botcmd, arg_botcmd, ValidationException
@@ -138,7 +138,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     def sign(self, msg: Message, args):  # pylint:disable=unused-argument
         from gitclient import GitCommandError
         fields = ()
-        updated_projects = self.git.get_updated_projects()
+        updated_projects = self.git.get_projects_in_stage(helpers.Stages.SENT)
         for project in updated_projects:
             key = self._get_project_key(project)
             final = project.get_final_tag()
@@ -205,13 +205,21 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         - backend: send cards and messages
         """
         # TODO: need to propagate errors and revert all changes if anything fails
-        fail = partialmethod(self._fail, stage=stage)
+        fail = partial(self._fail, to=msg.frm, stage=stage)
 
         if stage not in [helpers.Stages.SEALED, helpers.Stages.SENT]:
             raise ValueError('Given stage=%s not supported.' % stage)
 
+        # For the first stage, we need all projects that have commits since the last final
+        if stage == helpers.Stages.SEALED:
+            updated_projects = self.git.get_updated_projects(not stage == helpers.Stages.SEALED)
+        else:
+            # If *not* at the beginning of a release cycle, we need all projects that were successfully transitioned
+            # into the most recent stage. i.e. if we're ready to sign/finalize a release, we do that with all the
+            # projects that were sent (which is a stage name) to UAT
+            updated_projects = self.git.get_projects_in_stage(helpers.Stages(stage.value - 1))
+
         bumped_counter = 0
-        updated_projects = self.git.get_updated_projects(not stage == helpers.Stages.SEALED)
         for project in updated_projects:
             # TODO: wrap in a try/except and roll back repos and jira on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
