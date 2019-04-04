@@ -116,6 +116,7 @@ class JiraClient:
                 jql_str=(
                     'project = {project_name} '
                     'AND fixVersion = "{version_name}" '
+                    'AND "Release Type" != "No Merge" '
                     'ORDER BY issuetype ASC, updated DESC'
                 ).format(
                     project_name=project_name,
