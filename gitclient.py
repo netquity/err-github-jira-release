@@ -21,7 +21,7 @@ import helpers
 
 logger = logging.getLogger(os.path.basename(__file__))
 MergeLog = namedtuple('MergeLog', ['key', 'sha'])  # jira ticket key and commit sha
-TagTup = namedtuple('TagTup', ['sha', 'name', 'date'])  # TODO: rename
+Tag = namedtuple('Tag', ['sha', 'name', 'date'])
 
 DOMAIN = 'https://github.com'
 
@@ -87,21 +87,21 @@ class GitClient:
           release.
     """
     class TagData:
-        """A simple wrapper around `github.Tag.Tag` to provide just the details we need"""
+        """A simple wrapper that combines a ProjectPath with a Tag"""
         __slots__ = ['_project', '_tag']
 
         def __init__(
                 self,
                 project: 'ProjectPath',
-                tag: NamedTuple('TagTup', [
+                tag: NamedTuple('Tag', [
                     ('sha', str),
                     ('name', str),
                     ('date', str)
                 ])
         ):
-            if not isinstance(tag, TagTup):
+            if not isinstance(tag, Tag):
                 raise TypeError(
-                    f'Inappropriate type: `tag` argument must be of type `TagTup` but got `{type(tag)}`'
+                    f'Inappropriate type: `tag` argument must be of type `Tag` but got `{type(tag)}`'
                 )
             self._project = project
             self._tag = tag
@@ -185,14 +185,14 @@ class GitClient:
         @staticmethod
         def _is_unparsed_tag_valid(project: 'ProjectPath', unparsed_tag: List[str]) -> bool:
             def is_correct_field_length(tag_fields: List[str]) -> bool:
-                if len(tag_fields) == len(TagTup._fields):
+                if len(tag_fields) == len(Tag._fields):
                     return True
                 logger.warning(
-                    '%s: The given tag_string (tagtup %s) contains %s fields, expected %s; excluding from list',
+                    '%s: The given tag_string (tag %s) contains %s fields, expected %s; excluding from list',
                     project.name,
                     tag_fields[1] if len(tag_fields) >= 2 else 'MISSINGTAG',
                     len(tag_fields),
-                    len(TagTup._fields),
+                    len(Tag._fields),
                 )
                 return False
 
@@ -201,7 +201,7 @@ class GitClient:
                     return True
                 logger.warning(
                     (
-                        '%s: The given tag_string (tagtup %s) contains a malformed '
+                        '%s: The given tag_string (tag %s) contains a malformed '
                         'named, must start with "v"; excluding from list',
                     ),
                     project.name,
@@ -216,7 +216,7 @@ class GitClient:
                 except InvalidVersion:
                     logger.warning(
                         (
-                            '%s: the given tag_name (tagtup %s) could not be parsed '
+                            '%s: the given tag_name (tag %s) could not be parsed '
                             'with `packaging.version.parse`; excluding from list'
                         ),
                         project.name,
@@ -636,7 +636,7 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         return [tag_line.split() for tag_line in tag_lines]
 
     @staticmethod
-    def _get_tags(project: 'ProjectPath') -> List['TagTup']:
+    def _get_tags(project: 'ProjectPath') -> List['Tag']:
         """Get a project's tags from the local repo, not origin
 
         Returned list is sorted in descending order by version name using `packaging.version`.
@@ -646,7 +646,7 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         for unparsed_tag in tag_lines:
             # filters out "bad" tags and logs each one
             if GitClient.TagData._is_unparsed_tag_valid(project, unparsed_tag):
-                tags.append(TagTup(*unparsed_tag))
+                tags.append(Tag(*unparsed_tag))
                 logger.debug('%s: successfully parsed tag %s', project.name, tags[-1].name)
         logger.debug('%s: %s/%s tags validated', project.name, len(tags), len(tag_lines))
         # sort using `packaging.version` with most recent first
@@ -677,14 +677,14 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
 
     @classmethod
     def _find_tag(cls, project: 'ProjectPath', test: Callable[[str], bool]) -> Optional[GitClient.TagData]:
-        """Return the first tagtup that passes a given test or `None` if none found
+        """Return the first tag that passes a given test or `None` if none found
 
         The order of the tags is important when using this method.
         """
         try:
             return GitClient.TagData(
                 project,
-                next((tagtup for tagtup in cls._get_tags(project) if test(tagtup.name)), None),
+                next((tag for tag in cls._get_tags(project) if test(tag.name)), None),
             )
         except ValueError:
             return None
