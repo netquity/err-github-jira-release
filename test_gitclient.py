@@ -3,7 +3,7 @@ import re
 from shutil import rmtree
 
 import pytest
-from gitclient import GitClient
+from gitclient import RepoManager
 from pytest_shutil.workspace import Workspace
 from git import Repo
 
@@ -46,8 +46,8 @@ class GitRepo(Workspace):  # pylint:disable=too-few-public-methods
 
 
 @pytest.fixture
-def gitclient(request, git_repo):  # pylint:disable=redefined-outer-name
-    """A GitClient fixture to use in tests"""
+def repomanager(request, git_repo):  # pylint:disable=redefined-outer-name
+    """A RepoManager fixture to use in tests"""
     # Add a single commit
     path = git_repo.workspace
     file = path / 'hello.txt'
@@ -55,45 +55,45 @@ def gitclient(request, git_repo):  # pylint:disable=redefined-outer-name
     git_repo.run('git add hello.txt')
     git_repo.api.index.commit("Initial commit")
 
-    gitclient = GitClient({
+    repomanager = RepoManager({
         'REPOS_ROOT': os.path.dirname(git_repo.workspace.parent),
         'GITHUB_TOKEN': GH_TOKEN,
         'PROJECT_NAMES': [PROJECT_NAME, ],
     })
 
     def delete_backups():
-        backups_dir = gitclient._get_backups_path()
+        backups_dir = repomanager._get_backups_path()
         if os.path.exists(backups_dir):
             rmtree(backups_dir)
 
     request.addfinalizer(delete_backups)
-    return gitclient
+    return repomanager
 
 
-def test_get_project_root(gitclient):  # pylint:disable=redefined-outer-name
+def test_get_project_root(repomanager):  # pylint:disable=redefined-outer-name
     """Check the formatting of the project root string"""
     assert (
-        gitclient._get_project_root(PROJECT_NAME)
-        == os.path.join(gitclient.repos_root, PROJECT_NAME)
+        repomanager._get_project_root(PROJECT_NAME)
+        == os.path.join(repomanager.repos_root, PROJECT_NAME)
     )
 
 
-def test_get_ref(git_repo, gitclient):  # pylint:disable=redefined-outer-name
-    assert git_repo.api.git.reflog('--format=%H', '-1') == gitclient.get_ref(
+def test_get_ref(git_repo, repomanager):  # pylint:disable=redefined-outer-name
+    assert git_repo.api.git.reflog('--format=%H', '-1') == repomanager.get_ref(
         PROJECT_NAME
     )
 
 
-def test_git_context_manager(gitclient):  # pylint:disable=redefined-outer-name
+def test_git_context_manager(repomanager):  # pylint:disable=redefined-outer-name
     """Check that the context manager passes through commands and rolls back on error"""
-    with gitclient._gcmd(PROJECT_NAME) as gcm:  # pylint:disable=protected-access
+    with repomanager._gcmd(PROJECT_NAME) as gcm:  # pylint:disable=protected-access
         assert 'working tree clean' in gcm(['status']).stdout
 
 
-def test_backup_repo(gitclient):  # pylint:disable=redefined-outer-name
+def test_backup_repo(repomanager):  # pylint:disable=redefined-outer-name
     """Repo backups go to the right place without modification"""
-    gitclient._get_project_root(PROJECT_NAME)
-    dst = gitclient._backup_repo(PROJECT_NAME)
+    repomanager._get_project_root(PROJECT_NAME)
+    dst = repomanager._backup_repo(PROJECT_NAME)
 
     # confirm the expected location
     assert re.match(f'{REPOS_ROOT}.backups/{PROJECT_NAME}/[a-f0-9]{{7}}', dst)
@@ -101,19 +101,19 @@ def test_backup_repo(gitclient):  # pylint:disable=redefined-outer-name
     # assert not filecmp.dircmp(src, dst).diff_files
 
 
-def test_get_backups_path(gitclient):  # pylint:disable=redefined-outer-name
+def test_get_backups_path(repomanager):  # pylint:disable=redefined-outer-name
     """Check that the backups are goign to the right place"""
-    assert re.match(f'{REPOS_ROOT}.backups', gitclient._get_backups_path())
-    assert re.match(f'{REPOS_ROOT}.backups/{PROJECT_NAME}', gitclient._get_backups_path(PROJECT_NAME))
+    assert re.match(f'{REPOS_ROOT}.backups', repomanager._get_backups_path())
+    assert re.match(f'{REPOS_ROOT}.backups/{PROJECT_NAME}', repomanager._get_backups_path(PROJECT_NAME))
 
 
-def test_restore_repo(git_repo, gitclient):  # pylint:disable=redefined-outer-name
+def test_restore_repo(git_repo, repomanager):  # pylint:disable=redefined-outer-name
     """Check that repo backups are properly restored"""
-    ref = gitclient.get_ref(PROJECT_NAME)[:7]
-    backup_path = os.path.join(gitclient._get_backups_path(PROJECT_NAME), ref)
-    gitclient._get_project_root(PROJECT_NAME)
+    ref = repomanager.get_ref(PROJECT_NAME)[:7]
+    backup_path = os.path.join(repomanager._get_backups_path(PROJECT_NAME), ref)
+    repomanager._get_project_root(PROJECT_NAME)
 
-    gitclient._backup_repo(PROJECT_NAME)
+    repomanager._backup_repo(PROJECT_NAME)
 
     path = git_repo.workspace
     file = path / 'goodbye.txt'
@@ -121,11 +121,11 @@ def test_restore_repo(git_repo, gitclient):  # pylint:disable=redefined-outer-na
     git_repo.run('git add goodbye.txt')
     git_repo.api.index.commit("Final commit")
 
-    assert ref != gitclient.get_ref(PROJECT_NAME)[:7]  # ref was updated with the last commit
+    assert ref != repomanager.get_ref(PROJECT_NAME)[:7]  # ref was updated with the last commit
 
-    gitclient._restore_repo(PROJECT_NAME, backup_path)
+    repomanager._restore_repo(PROJECT_NAME, backup_path)
 
-    assert ref == gitclient.get_ref(PROJECT_NAME)[:7]  # original ref restored after _restore_repo
+    assert ref == repomanager.get_ref(PROJECT_NAME)[:7]  # original ref restored after _restore_repo
 
     assert os.path.exists(backup_path)  # the backup should still be available after restoring
     assert not os.path.exists(backup_path + '.swap')  # delete the backup swap

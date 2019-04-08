@@ -11,7 +11,7 @@ from errbot import BotPlugin, botcmd, ValidationException
 from errbot.botplugin import recurse_check_structure
 from jiraclient import JiraClient, NoJIRAIssuesFoundError
 from errbot.backends.base import Message, Identifier
-from gitclient import GitClient, Repo
+from gitclient import RepoManager, Repo
 
 import helpers
 
@@ -83,7 +83,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         self._setup_repos()
         super().activate()
         self.jira = JiraClient(self._get_jira_config())  # pylint:disable=attribute-defined-outside-init
-        self.git = GitClient(self._get_git_config())  # pylint:disable=attribute-defined-outside-init
+        self.git = RepoManager(self._get_git_config())  # pylint:disable=attribute-defined-outside-init
 
     def get_configuration_template(self) -> str:
         return {
@@ -310,7 +310,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         }
 
     def _get_git_config(self) -> dict:
-        """Return data required for initializing GitClient"""
+        """Return data required for initializing RepoManager"""
         return {
             'REPOS_ROOT': self.config['REPOS_ROOT'],
             'GITHUB_TOKEN': self.config['GITHUB_TOKEN'],

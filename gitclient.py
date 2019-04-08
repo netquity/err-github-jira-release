@@ -75,7 +75,7 @@ def _execute_path_git(repo_root: str, git_command: list) -> CompletedProcess:
         raise GitCommandError()
 
 
-class GitClient:
+class RepoManager:
     """Manage local repos and their remotes
 
     Conventions:
@@ -139,13 +139,13 @@ class GitClient:
         def is_final_name(tag_name: str) -> bool:
             """Determine whether the given tag string is a final tag string
 
-            >>> GitClient.RepoTag.is_final_name('v1.0.0')
+            >>> RepoManager.RepoTag.is_final_name('v1.0.0')
             True
-            >>> GitClient.RepoTag.is_final_name('v1.0.0-rc.1')
+            >>> RepoManager.RepoTag.is_final_name('v1.0.0-rc.1')
             False
-            >>> GitClient.RepoTag.is_final_name('v1.0.0-rc.1+sealed')
+            >>> RepoManager.RepoTag.is_final_name('v1.0.0-rc.1+sealed')
             False
-            >>> GitClient.RepoTag.is_final_name('v1.0.0+20130313144700')
+            >>> RepoManager.RepoTag.is_final_name('v1.0.0+20130313144700')
             True
             """
             import semver
@@ -166,15 +166,15 @@ class GitClient:
             :param old_tag_name: version string expected to be sorted before the new_tag_name
             :param new_tag_name: version string expected to be sorted after the old_tag_name
             :return: True if expectations are correct and False otherwise
-            >>> GitClient.RepoTag.is_older_name('v1.0.0', 'v2.0.0')
+            >>> RepoManager.RepoTag.is_older_name('v1.0.0', 'v2.0.0')
             True
-            >>> GitClient.RepoTag.is_older_name('v1.0.0', 'v1.0.0')
+            >>> RepoManager.RepoTag.is_older_name('v1.0.0', 'v1.0.0')
             False
-            >>> GitClient.RepoTag.is_older_name('v1.0.0', 'v1.0.0-rc.1')
+            >>> RepoManager.RepoTag.is_older_name('v1.0.0', 'v1.0.0-rc.1')
             False
-            >>> GitClient.RepoTag.is_older_name('v1.0.0', 'v1.0.1-rc.1+sealed')
+            >>> RepoManager.RepoTag.is_older_name('v1.0.0', 'v1.0.1-rc.1+sealed')
             True
-            >>> GitClient.RepoTag.is_older_name('1.0.0', '2.0.0')  # need to include the leading `v`
+            >>> RepoManager.RepoTag.is_older_name('1.0.0', '2.0.0')  # need to include the leading `v`
             Traceback (most recent call last):
                 ...
             ValueError: .0.0 is not valid SemVer string
@@ -370,7 +370,7 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
         logger.debug('%s: %s merges to develop since %s', self.name, merge_count, latest_tag.name)
         return merge_count
 
-    def get_prerelease_tag(self, min_version: Optional[GitClient.RepoTag] = None) -> Optional[GitClient.RepoTag]:
+    def get_prerelease_tag(self, min_version: Optional[RepoManager.RepoTag] = None) -> Optional[RepoManager.RepoTag]:
         """Get the latest prerelease tag name
 
         :param min_version: if included, will ignore all versions below this one
@@ -387,7 +387,7 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
         except AttributeError:
             logger.debug('%s get prerelease tag, min_version=%s: None', self.name, getattr(min_version, 'name', None))
             return None
-        tag = pre_tag if GitClient.RepoTag.is_older_name(min_version.name, pre_tag.name) else None
+        tag = pre_tag if RepoManager.RepoTag.is_older_name(min_version.name, pre_tag.name) else None
         logger.debug('%s get prerelease tag, min_version=%s: %s', self.name, min_version, getattr(tag, 'name', None))
         return tag
 
@@ -424,7 +424,7 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
         :param tag_name: the new tag to apply to develop's HEAD
         """
         tag_name = format_version(tag_name)
-        # FIXME: should wrap all commands with gcmd, rather than individually inside gitclient code
+        # FIXME: should wrap all commands with gcmd, rather than individually inside RepoManager code
         self.checkout_latest('develop')
         self.create_tag(tag_name)
         self.create_ref(tag_name, 'develop')
@@ -556,14 +556,14 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
             Repo._get_latest_tag(self, since_final)
         ) > 0
 
-    def _get_merge_count_since(self, tag: GitClient.RepoTag) -> int:
+    def _get_merge_count_since(self, tag: RepoManager.RepoTag) -> int:
         """Get the number of merges to develop since the given tag"""
         # The first result will be the merge commit from last release
         count = len(self._get_merges_since(tag)) - 1
         logger.debug('%s merge count since %s: %s', self.name, tag.name, count)
         return count
 
-    def _get_merges_since(self, tag: GitClient.RepoTag, *flags: List[str]) -> List[str]:
+    def _get_merges_since(self, tag: RepoManager.RepoTag, *flags: List[str]) -> List[str]:
         """Get the git log entries to develop since the given tag"""
         # FIXME: assumes master and developed have not diverged, which is not a safe assumption at all
         return _execute_path_git(
@@ -645,7 +645,7 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
         tag_lines = Repo._get_tag_lines(repo)
         for unparsed_tag in tag_lines:
             # filters out "bad" tags and logs each one
-            if GitClient.RepoTag._is_unparsed_tag_valid(repo, unparsed_tag):
+            if RepoManager.RepoTag._is_unparsed_tag_valid(repo, unparsed_tag):
                 tags.append(Tag(*unparsed_tag))
                 logger.debug('%s: successfully parsed tag %s', repo.name, tags[-1].name)
         logger.debug('%s: %s/%s tags validated', repo.name, len(tags), len(tag_lines))
@@ -653,7 +653,7 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
         return sorted(tags, key=lambda tag: cached_parse(tag.name), reverse=True)
 
     @classmethod
-    def _get_latest_tag(cls, repo: 'Repo', find_final: bool = True) -> Optional[GitClient.RepoTag]:
+    def _get_latest_tag(cls, repo: 'Repo', find_final: bool = True) -> Optional[RepoManager.RepoTag]:
         """Get the latest final or prerelease tag
 
         Final tags do not contain a prerelease segment, but may contain a SemVer metadata segment.
@@ -669,20 +669,20 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
         """
         tag = cls._find_tag(
             repo,
-            GitClient.RepoTag.is_final_name if find_final
-            else lambda tag: not GitClient.RepoTag.is_final_name(tag)
+            RepoManager.RepoTag.is_final_name if find_final
+            else lambda tag: not RepoManager.RepoTag.is_final_name(tag)
         )
         logger.debug('%s get latest tag (find_final=%s): %s', repo.name, find_final, getattr(tag, 'name', None))
         return tag
 
     @classmethod
-    def _find_tag(cls, repo: 'Repo', test: Callable[[str], bool]) -> Optional[GitClient.RepoTag]:
+    def _find_tag(cls, repo: 'Repo', test: Callable[[str], bool]) -> Optional[RepoManager.RepoTag]:
         """Return the first tag that passes a given test or `None` if none found
 
         The order of the tags is important when using this method.
         """
         try:
-            return GitClient.RepoTag(
+            return RepoManager.RepoTag(
                 repo,
                 next((tag for tag in cls._get_tags(repo) if test(tag.name)), None),
             )
@@ -693,9 +693,9 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
     def _get_merged_prs_url(repo: 'Repo', start_date: str, end_date: str) -> str:
         """Get the URL to see merged PRs in a date range on GitHub
 
-        >>> GitClient._get_merged_prs_url('foo/bar-prj', '2018-01-01T22:02:39+00:00', '2018-01-02T22:02:39+00:00')[:46]
+        >>> RepoManager._get_merged_prs_url('foo/bar-prj', '2018-01-01T22:02:39+00:00', '2018-01-02T22:02:39+00:00')[:46]
         'https://github.com/foo/bar-prj/pulls?utf8=✓&q='
-        >>> GitClient._get_merged_prs_url('foo/bar-prj', '2018-01-01T22:02:39+00:00', '2018-01-02T22:02:39+00:00')[46:]
+        >>> RepoManager._get_merged_prs_url('foo/bar-prj', '2018-01-01T22:02:39+00:00', '2018-01-02T22:02:39+00:00')[46:]
         'is:pr+is:closed+merged:2018-01-01T22:02:39+00:00..2018-01-02T22:02:39+00:00'
         """
         return f'{DOMAIN}/{repo.name}/pulls?utf8=✓&q=is:pr+is:closed+merged:{start_date}..{end_date}'
