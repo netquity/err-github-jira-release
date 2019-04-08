@@ -10,12 +10,13 @@ import sys
 from collections import namedtuple
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from functools import lru_cache
+from functools import lru_cache, total_ordering
 from subprocess import CompletedProcess, CalledProcessError
 from typing import Callable, List, Generator, Optional, NamedTuple
 
 from github import Github
 from packaging.version import parse, InvalidVersion
+import semver
 
 import helpers
 
@@ -75,6 +76,7 @@ def _execute_path_git(repo_root: str, git_command: list) -> CompletedProcess:
         raise GitCommandError()
 
 
+@total_ordering
 class RepoTag:
     """A simple wrapper that combines a Repo with a Tag"""
     __slots__ = ['_repo', '_tag']
@@ -98,6 +100,23 @@ class RepoTag:
 
     def __repr__(self):
         return f'{self.__class__.__name__}({self.sha}, {self.name})'
+
+    def __eq__(self, other) -> bool:
+        RepoTag._validate_project_names(self.repo.name, other.repo.name)
+        return self.name == other.name and self.date == other.date
+
+    def __ne__(self, other) -> bool:
+        RepoTag._validate_project_names(self.repo.name, other.repo.name)
+        return self.name != other.name and self.date != other.date
+
+    def __gt__(self, other) -> bool:
+        RepoTag._validate_project_names(self.repo.name, other.repo.name)
+        return semver.match(self.name[1:], f">{other.name[1:]}")  # removing leading `v`
+
+    @staticmethod
+    def _validate_project_names(name1, name2) -> None:
+        if name1 != name2:
+            raise ValueError('Cannot compare tags from different repos: %s vs. %s' % name1, name2)
 
     @property
     def repo(self):
@@ -137,7 +156,6 @@ class RepoTag:
         >>> RepoTag.is_final_name('v1.0.0+20130313144700')
         True
         """
-        import semver
         try:
             # tag_name[1:] because our tags have a leading `v`
             return semver.parse(tag_name[1:]).get('prerelease') is None
@@ -168,8 +186,7 @@ class RepoTag:
             ...
         ValueError: .0.0 is not valid SemVer string
         """
-        from semver import match
-        return match(old_tag_name[1:], f"<{new_tag_name[1:]}")
+        return semver.match(old_tag_name[1:], f"<{new_tag_name[1:]}")
 
     @staticmethod
     def is_unparsed_tag_valid(repo: 'Repo', unparsed_tag: List[str]) -> bool:
