@@ -172,7 +172,12 @@ class RepoTag:
         return match(old_tag_name[1:], f"<{new_tag_name[1:]}")
 
     @staticmethod
-    def _is_unparsed_tag_valid(repo: 'Repo', unparsed_tag: List[str]) -> bool:
+    def is_unparsed_tag_valid(repo: 'Repo', unparsed_tag: List[str]) -> bool:
+        """Check whether the given unparsed tag is valid
+
+        An unparsed tag will be a list of strings pulled from the `git log` output, like:
+        ['efdf7a56', 'v3.1.0', '2017-11-23T19:13:52+00:00']
+        """
         def is_correct_field_length(tag_fields: List[str]) -> bool:
             if len(tag_fields) == len(Tag._fields):
                 return True
@@ -252,7 +257,7 @@ class RepoManager:
         """
         updated_repos = [
             repo for repo in self.repos
-            if repo._is_updated_since(since_final)
+            if repo.is_updated_since(since_final)
         ]
         logger.debug('Got updated repos: %s/%s updated', len(updated_repos), len(self.repos))
         return updated_repos
@@ -262,7 +267,7 @@ class RepoManager:
         lowered_stage = stage.verb.lower()
         repos = [
             repo for repo in self.repos
-            if lowered_stage in Repo._get_latest_tag(repo, False).name.lower()
+            if lowered_stage in Repo.get_latest_tag(repo, False).name.lower()
         ]
         logger.debug('Got repos in stage=%s: %s/%s updated', stage.name, len(repos), len(self.repos))
         return repos
@@ -350,7 +355,7 @@ class Repo(namedtuple('Repo', ['path', 'github', 'name'])):
 
     def get_merge_count(self) -> int:
         """Get the number of merges to develop since the last final tag"""
-        latest_tag = Repo._get_latest_tag(
+        latest_tag = Repo.get_latest_tag(
             repo=self,
             find_final=True,
         )
@@ -365,7 +370,7 @@ class Repo(namedtuple('Repo', ['path', 'github', 'name'])):
         :return: either the version string of the latest prerelease tag or `None` if one wasn't found
         """
         try:
-            pre_tag = Repo._get_latest_tag(
+            pre_tag = Repo.get_latest_tag(
                 self,
                 find_final=False,
             )
@@ -533,15 +538,15 @@ class Repo(namedtuple('Repo', ['path', 'github', 'name'])):
 
     def get_final_tag(self) -> Optional['RepoTag']:
         """Get the latest final tag for a given repo name"""
-        return Repo._get_latest_tag(
+        return Repo.get_latest_tag(
             repo=self,
             find_final=True,
         )
 
-    def _is_updated_since(self, since_final: bool = True) -> bool:
+    def is_updated_since(self, since_final: bool = True) -> bool:
         """Check if the given origin has commits to develop since either the last final or prerelease"""
         return self._get_merge_count_since(
-            Repo._get_latest_tag(self, since_final)
+            Repo.get_latest_tag(self, since_final)
         ) > 0
 
     def _get_merge_count_since(self, tag: RepoTag) -> int:
@@ -633,7 +638,7 @@ class Repo(namedtuple('Repo', ['path', 'github', 'name'])):
         tag_lines = Repo._get_tag_lines(repo)
         for unparsed_tag in tag_lines:
             # filters out "bad" tags and logs each one
-            if RepoTag._is_unparsed_tag_valid(repo, unparsed_tag):
+            if RepoTag.is_unparsed_tag_valid(repo, unparsed_tag):
                 tags.append(Tag(*unparsed_tag))
                 logger.debug('%s: successfully parsed tag %s', repo.name, tags[-1].name)
         logger.debug('%s: %s/%s tags validated', repo.name, len(tags), len(tag_lines))
@@ -641,7 +646,7 @@ class Repo(namedtuple('Repo', ['path', 'github', 'name'])):
         return sorted(tags, key=lambda tag: cached_parse(tag.name), reverse=True)
 
     @classmethod
-    def _get_latest_tag(cls, repo: 'Repo', find_final: bool = True) -> Optional[RepoTag]:
+    def get_latest_tag(cls, repo: 'Repo', find_final: bool = True) -> Optional[RepoTag]:
         """Get the latest final or prerelease tag
 
         Final tags do not contain a prerelease segment, but may contain a SemVer metadata segment.
