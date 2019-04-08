@@ -58,17 +58,17 @@ def format_version(version: str) -> str:
     return re.sub(r'^(v)?(.*)$', r'v\g<2>', version)
 
 
-def _execute_path_git(project_root: str, git_command: list) -> CompletedProcess:
+def _execute_path_git(repo_root: str, git_command: list) -> CompletedProcess:
     """Execute a git command in a specific directory"""
     try:
         return helpers.run_subprocess(
             ['git'] + git_command,
-            cwd=project_root,
+            cwd=repo_root,
         )
     except CalledProcessError:
         logger.exception(
             '%s: Failed git command=%s, output=%s',
-            project_root,
+            repo_root,
             git_command,
             sys.exc_info()[1].stdout,
         )
@@ -87,12 +87,12 @@ class GitClient:
           release.
     """
     class TagData:
-        """A simple wrapper that combines a ProjectPath with a Tag"""
-        __slots__ = ['_project', '_tag']
+        """A simple wrapper that combines a Repo with a Tag"""
+        __slots__ = ['_repo', '_tag']
 
         def __init__(
                 self,
-                project: 'ProjectPath',
+                repo: 'Repo',
                 tag: NamedTuple('Tag', [
                     ('sha', str),
                     ('name', str),
@@ -103,17 +103,17 @@ class GitClient:
                 raise TypeError(
                     f'Inappropriate type: `tag` argument must be of type `Tag` but got `{type(tag)}`'
                 )
-            self._project = project
+            self._repo = repo
             self._tag = tag
-            logger.debug('%s inited TagData for %s', project.name, self.name)
+            logger.debug('%s inited TagData for %s', repo.name, self.name)
 
         def __repr__(self):
             return f'{self.__class__.__name__}({self.sha}, {self.name})'
 
         @property
-        def project(self):
-            """Get the name of the project this tag belongs to"""
-            return self._project
+        def repo(self):
+            """Get the name of the repo this tag belongs to"""
+            return self._repo
 
         @property
         def name(self):
@@ -128,7 +128,7 @@ class GitClient:
         @property
         def url(self):
             """Get the URL of the GitHub release that corresponds with the tag"""
-            return f'{DOMAIN}/{self.project.name}/releases/tag/{self.name}'
+            return f'{DOMAIN}/{self.repo.name}/releases/tag/{self.name}'
 
         @property
         def date(self):
@@ -183,13 +183,13 @@ class GitClient:
             return match(old_tag_name[1:], f"<{new_tag_name[1:]}")
 
         @staticmethod
-        def _is_unparsed_tag_valid(project: 'ProjectPath', unparsed_tag: List[str]) -> bool:
+        def _is_unparsed_tag_valid(repo: 'Repo', unparsed_tag: List[str]) -> bool:
             def is_correct_field_length(tag_fields: List[str]) -> bool:
                 if len(tag_fields) == len(Tag._fields):
                     return True
                 logger.warning(
                     '%s: The given tag_string (tag %s) contains %s fields, expected %s; excluding from list',
-                    project.name,
+                    repo.name,
                     tag_fields[1] if len(tag_fields) >= 2 else 'MISSINGTAG',
                     len(tag_fields),
                     len(Tag._fields),
@@ -204,7 +204,7 @@ class GitClient:
                         '%s: The given tag_string (tag %s) contains a malformed '
                         'named, must start with "v"; excluding from list',
                     ),
-                    project.name,
+                    repo.name,
                     tag_fields[1],
                 )
                 return False
@@ -219,7 +219,7 @@ class GitClient:
                             '%s: the given tag_name (tag %s) could not be parsed '
                             'with `packaging.version.parse`; excluding from list'
                         ),
-                        project.name,
+                        repo.name,
                         tag_name,
                     )
                     return False
@@ -230,50 +230,50 @@ class GitClient:
                 and is_parsable(unparsed_tag[1])
             )
 
-    __slots__ = ['repos_root', 'projects', 'github']
+    __slots__ = ['repos_root', 'repos', 'github']
 
     def __init__(self, config: dict):
         self.github = Github(config['GITHUB_TOKEN'])
         self.repos_root = config['REPOS_ROOT']
-        self.projects = [
-            ProjectPath(
+        self.repos = [
+            Repo(
                 os.path.join(self.repos_root, project_name),
                 self.github.get_repo(project_name),
             )
             for project_name in config['PROJECT_NAMES']
         ]
 
-    def get_updated_projects(self, since_final: bool = True) -> List['ProjectPath']:
+    def get_updated_repos(self, since_final: bool = True) -> List['Repo']:
         """Get a list of the `origin` repos that have commits to develop since either the last final or prerelease
 
         :param since_final: if True, look for updates since the latest final tag; otherwise, since latest prerelease
         """
-        updated_projects = [
-            project for project in self.projects
-            if project._is_updated_since(since_final)
+        updated_repos = [
+            repo for repo in self.repos
+            if repo._is_updated_since(since_final)
         ]
-        logger.debug('Got updated projects: %s/%s updated', len(updated_projects), len(self.projects))
-        return updated_projects
+        logger.debug('Got updated repos: %s/%s updated', len(updated_repos), len(self.repos))
+        return updated_repos
 
-    def get_projects_in_stage(self, stage: helpers.Stages) -> Optional[List['ProjectPath']]:
-        """Get a list of projects for which the most recent tag is in the given stage"""
+    def get_repos_in_stage(self, stage: helpers.Stages) -> Optional[List['Repo']]:
+        """Get a list of repos for which the most recent tag is in the given stage"""
         lowered_stage = stage.verb.lower()
-        projects = [
-            project for project in self.projects
-            if lowered_stage in ProjectPath._get_latest_tag(project, False).name.lower()
+        repos = [
+            repo for repo in self.repos
+            if lowered_stage in Repo._get_latest_tag(repo, False).name.lower()
         ]
-        logger.debug('Got projects in stage=%s: %s/%s updated', stage.name, len(projects), len(self.projects))
-        return projects
+        logger.debug('Got repos in stage=%s: %s/%s updated', stage.name, len(repos), len(self.repos))
+        return repos
 
 
-class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: rename, maybe to just `project`
-    """Projects have a path and a limited set of attributes that can be derived from it"""
+class Repo(namedtuple('Repo', ['path', 'github'])):
+    """Repos have a path and a limited set of attributes that can be derived from it"""
     def __repr__(self):
         return f'{self.__class__.__name__}({self.name})'
 
     @property
     def name(self):
-        """Get the full name of the project e.g. 'netquity/err-github-jira-release'"""
+        """Get the full name of the repo e.g. 'netquity/err-github-jira-release'"""
         import re
         return re.match(r'^.*/(.*/.*)/?$', self.path)[1]  # TODO: pretty slow, make better
 
@@ -362,8 +362,8 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
 
     def get_merge_count(self) -> int:
         """Get the number of merges to develop since the last final tag"""
-        latest_tag = ProjectPath._get_latest_tag(
-            project=self,
+        latest_tag = Repo._get_latest_tag(
+            repo=self,
             find_final=True,
         )
         merge_count = self._get_merge_count_since(latest_tag)
@@ -377,7 +377,7 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         :return: either the version string of the latest prerelease tag or `None` if one wasn't found
         """
         try:
-            pre_tag = ProjectPath._get_latest_tag(
+            pre_tag = Repo._get_latest_tag(
                 self,
                 find_final=False,
             )
@@ -471,7 +471,7 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         logger.debug('%s complete update develop by merging master', self.name)
 
     def checkout_latest(self, ref: str) -> None:
-        """Check out the latest version of develop for the given project"""
+        """Check out the latest version of develop for the given repo"""
         with self._gcmd() as gcmd:
             for git_command in [
                     ['fetch', '--prune', '--force', '--tags'],
@@ -481,7 +481,7 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         logger.info('%s: checked out latest origin/%s', self.name, ref)
 
     def add_release_notes_to_develop(self, version_name: str, release_notes: str) -> str:
-        """Wrap subprocess calls with some project-specific defaults.
+        """Wrap subprocess calls with some repo-specific defaults.
 
         :return: Release commit hash.
         """
@@ -525,7 +525,7 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
 
     def get_merged_prs_url(self) -> str:
         """Get the URL to see merged PRs since the latest final on GitHub"""
-        return ProjectPath._get_merged_prs_url(
+        return Repo._get_merged_prs_url(
             self,
             self.get_final_tag().date,
             datetime.now(timezone.utc).replace(microsecond=0).isoformat().split('+')[0],
@@ -544,16 +544,16 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         ).stdout.strip().splitlines())
 
     def get_final_tag(self) -> Optional['TagData']:
-        """Get the latest final tag for a given project name"""
-        return ProjectPath._get_latest_tag(
-            project=self,
+        """Get the latest final tag for a given repo name"""
+        return Repo._get_latest_tag(
+            repo=self,
             find_final=True,
         )
 
     def _is_updated_since(self, since_final: bool = True) -> bool:
         """Check if the given origin has commits to develop since either the last final or prerelease"""
         return self._get_merge_count_since(
-            ProjectPath._get_latest_tag(self, since_final)
+            Repo._get_latest_tag(self, since_final)
         ) > 0
 
     def _get_merge_count_since(self, tag: GitClient.TagData) -> int:
@@ -572,7 +572,7 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         ).stdout.replace('"', '').splitlines()[:-1]  # remove last entry as it's the update from master
 
     def _fetch_tags(self) -> None:
-        """Fetch the project's tags from origin to its local repo"""
+        """Fetch the repo's tags from origin to its local repo"""
         _execute_path_git(
             self.path,
             ['fetch', '--tags'],
@@ -606,54 +606,54 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         shutil.rmtree(self.path)
         return shutil.move(src=backup_swap, dst=self.path)
 
-    def _get_backups_path(self, project: 'ProjectPath' = None) -> str:
-        """Get the backups dir path, either for all projects, or for the given project name"""
+    def _get_backups_path(self, repo: 'Repo' = None) -> str:
+        """Get the backups dir path, either for all repos, or for the given repo name"""
         return os.path.join(
             *[self.repos_root, '.backups']
-            + ([project.name] if project else [])
+            + ([repo.name] if repo else [])
         )
 
     @staticmethod
-    def _get_tag_lines(project: 'ProjectPath') -> List[str]:
+    def _get_tag_lines(repo: 'Repo') -> List[str]:
         """Get stdout lines from `git tag`
 
         Each one should include commit SHA, tag name, and creator date.
 
-        Some may be malformed as projects could have used different versioning schemes and tagging approaches in the
+        Some may be malformed as repos could have used different versioning schemes and tagging approaches in the
         past. This method does not filter them out, but at some point they should be filtered to be consistent with the
         versioning scheme used throughout this plugin.
         """
         tag_lines = _execute_path_git(
-            project.path,
+            repo.path,
             ["tag", "--format=%(objectname:short) %(refname:short) %(creatordate:iso8601-strict)"]
         ).stdout.strip().splitlines()
         logger.debug(
             '%s: got %s tags from `git tag`',
-            project.name,
+            repo.name,
             len(tag_lines),
         )
         # e.g. [['efdf7a56', 'v3.1.0', '2017-11-23T19:13:52+00:00'], ...]
         return [tag_line.split() for tag_line in tag_lines]
 
     @staticmethod
-    def _get_tags(project: 'ProjectPath') -> List['Tag']:
-        """Get a project's tags from the local repo, not origin
+    def _get_tags(repo: 'Repo') -> List['Tag']:
+        """Get a repo's tags from the local repo, not origin
 
         Returned list is sorted in descending order by version name using `packaging.version`.
         """
         tags = []
-        tag_lines = ProjectPath._get_tag_lines(project)
+        tag_lines = Repo._get_tag_lines(repo)
         for unparsed_tag in tag_lines:
             # filters out "bad" tags and logs each one
-            if GitClient.TagData._is_unparsed_tag_valid(project, unparsed_tag):
+            if GitClient.TagData._is_unparsed_tag_valid(repo, unparsed_tag):
                 tags.append(Tag(*unparsed_tag))
-                logger.debug('%s: successfully parsed tag %s', project.name, tags[-1].name)
-        logger.debug('%s: %s/%s tags validated', project.name, len(tags), len(tag_lines))
+                logger.debug('%s: successfully parsed tag %s', repo.name, tags[-1].name)
+        logger.debug('%s: %s/%s tags validated', repo.name, len(tags), len(tag_lines))
         # sort using `packaging.version` with most recent first
         return sorted(tags, key=lambda tag: cached_parse(tag.name), reverse=True)
 
     @classmethod
-    def _get_latest_tag(cls, project: 'ProjectPath', find_final: bool = True) -> Optional[GitClient.TagData]:
+    def _get_latest_tag(cls, repo: 'Repo', find_final: bool = True) -> Optional[GitClient.TagData]:
         """Get the latest final or prerelease tag
 
         Final tags do not contain a prerelease segment, but may contain a SemVer metadata segment.
@@ -668,29 +668,29 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         :param find_final: if True, look for the latest final tag; otherwise, look for latest prerelease
         """
         tag = cls._find_tag(
-            project,
+            repo,
             GitClient.TagData.is_final_name if find_final
             else lambda tag: not GitClient.TagData.is_final_name(tag)
         )
-        logger.debug('%s get latest tag (find_final=%s): %s', project.name, find_final, getattr(tag, 'name', None))
+        logger.debug('%s get latest tag (find_final=%s): %s', repo.name, find_final, getattr(tag, 'name', None))
         return tag
 
     @classmethod
-    def _find_tag(cls, project: 'ProjectPath', test: Callable[[str], bool]) -> Optional[GitClient.TagData]:
+    def _find_tag(cls, repo: 'Repo', test: Callable[[str], bool]) -> Optional[GitClient.TagData]:
         """Return the first tag that passes a given test or `None` if none found
 
         The order of the tags is important when using this method.
         """
         try:
             return GitClient.TagData(
-                project,
-                next((tag for tag in cls._get_tags(project) if test(tag.name)), None),
+                repo,
+                next((tag for tag in cls._get_tags(repo) if test(tag.name)), None),
             )
         except ValueError:
             return None
 
     @staticmethod
-    def _get_merged_prs_url(project: 'ProjectPath', start_date: str, end_date: str) -> str:
+    def _get_merged_prs_url(repo: 'Repo', start_date: str, end_date: str) -> str:
         """Get the URL to see merged PRs in a date range on GitHub
 
         >>> GitClient._get_merged_prs_url('foo/bar-prj', '2018-01-01T22:02:39+00:00', '2018-01-02T22:02:39+00:00')[:46]
@@ -698,4 +698,4 @@ class ProjectPath(namedtuple('ProjectPath', ['path', 'github'])):  # TODO: renam
         >>> GitClient._get_merged_prs_url('foo/bar-prj', '2018-01-01T22:02:39+00:00', '2018-01-02T22:02:39+00:00')[46:]
         'is:pr+is:closed+merged:2018-01-01T22:02:39+00:00..2018-01-02T22:02:39+00:00'
         """
-        return f'{DOMAIN}/{project.name}/pulls?utf8=✓&q=is:pr+is:closed+merged:{start_date}..{end_date}'
+        return f'{DOMAIN}/{repo.name}/pulls?utf8=✓&q=is:pr+is:closed+merged:{start_date}..{end_date}'

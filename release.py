@@ -11,7 +11,7 @@ from errbot import BotPlugin, botcmd, ValidationException
 from errbot.botplugin import recurse_check_structure
 from jiraclient import JiraClient, NoJIRAIssuesFoundError
 from errbot.backends.base import Message, Identifier
-from gitclient import GitClient, ProjectPath
+from gitclient import GitClient, Repo
 
 import helpers
 
@@ -124,7 +124,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     @botcmd
     def seal(self, msg: Message, args) -> Optional[str]:  # pylint:disable=unused-argument
         """Initiate the release sequence by tagging updated projects"""
-        return self._bump_projects_set(msg, helpers.Stages.SEALED)
+        return self._bump_repos_set(msg, helpers.Stages.SEALED)
 
     @botcmd
     def send(self, msg: Message, args) -> str:  # pylint:disable=unused-argument
@@ -133,22 +133,22 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         This command is called only after the `seal` command is called and the sealed version set is tested and
         approved.
         """
-        return self._bump_projects_set(msg, helpers.Stages.SENT)
+        return self._bump_repos_set(msg, helpers.Stages.SENT)
 
     @botcmd
     def sign(self, msg: Message, args):  # pylint:disable=unused-argument
         from gitclient import GitCommandError
-        updated_projects = self.git.get_projects_in_stage(helpers.Stages.SENT)
-        for project in updated_projects:
-            key = self._get_project_key(project)
-            final = project.get_final_tag()
+        updated_repos = self.git.get_repos_in_stage(helpers.Stages.SENT)
+        for repo in updated_repos:
+            key = self._get_project_key(repo)
+            final = repo.get_final_tag()
             # FIXME: catch InvalidVersionNameError and InvalidStageTransitionError
             new_version_name = self.jira.get_pending_version_name(
                 key,
                 helpers.Stages.SIGNED,
-                project.get_rev_hash(ref="origin/develop")[:7],
+                repo.get_rev_hash(ref="origin/develop")[:7],
                 final.name,
-                getattr(project.get_prerelease_tag(min_version=final), 'name', None),
+                getattr(repo.get_prerelease_tag(min_version=final), 'name', None),
             )
             jira_version = self.jira.create_version(
                 key,
@@ -161,16 +161,15 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 is_hotfix=False,  # FIXME: need to actually do something for hotfixes
             )
             # TODO: add release notes to changelog file
-            # FIXME: wrong version number
             # FIXME: catch IssueMergesCountMismatchError
-            release_notes = self.jira.get_release_notes(jira_version, project.get_merge_logs())
+            release_notes = self.jira.get_release_notes(jira_version, repo.get_merge_logs())
             is_hotfix = False  # TODO: TEMPORARY SHIM; REMOVE!!!
             try:
                 if is_hotfix:
                     # TODO: need better exception handling
-                    project.add_release_notes_to_develop(new_version_name, release_notes)
+                    repo.add_release_notes_to_develop(new_version_name, release_notes)
                 else:
-                    project.merge_and_create_release_commit(new_version_name, release_notes)
+                    repo.merge_and_create_release_commit(new_version_name, release_notes)
             except GitCommandError:
                 self.log.exception(
                     'Unable to merge release branch to master and create release commit.'
@@ -182,13 +181,13 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 )
                 return exc_message
             # Need the merge commit sha as part of the version metadata
-            Release._create_final_release(new_version_name, jira_version, project, release_notes, is_hotfix)
+            Release._create_final_release(new_version_name, jira_version, repo, release_notes, is_hotfix)
 
             self._send_version_card(
                 self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER']),
-                project=project,
+                repo=repo,
                 card_dict=dict(
-                    self._get_version_card(project),
+                    self._get_version_card(repo),
                     **{'New Version Name': new_version_name}
                 ),
             )
@@ -197,22 +196,22 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     def _create_final_release(
             new_version_name: str,
             jira_version: Version,
-            project: ProjectPath,
+            repo: Repo,
             release_notes: str,
             is_hotfix: bool = False,
     ) -> None:
-        new_version_name = helpers.change_sha(new_version_name, project.ref[:7])
+        new_version_name = helpers.change_sha(new_version_name, repo.ref[:7])
         JiraClient.change_version_name(jira_version, new_version_name)
-        project.create_tag(tag_name=new_version_name)
-        project.create_ref(version_name=new_version_name)
-        project.create_release(release_notes=release_notes, version_name=new_version_name)
+        repo.create_tag(tag_name=new_version_name)
+        repo.create_ref(version_name=new_version_name)
+        repo.create_release(release_notes=release_notes, version_name=new_version_name)
         if not is_hotfix:
-            project.update_develop()
+            repo.update_develop()
 
-    def _bump_projects_set(self, msg: Message, stage: helpers.Stages) -> Optional[str]:
+    def _bump_repos_set(self, msg: Message, stage: helpers.Stages) -> Optional[str]:
         """Transition the entire set of updated projects to the given stage
 
-        This method produces side-effects on Jira, Git (local and origin), and whatever chat backend is being used:
+        This method produces side-effects on Git (local and origin), and whatever chat backend is being used:
         - git: create tag and ref
         - backend: send cards and messages
         """
@@ -222,29 +221,29 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         if stage not in [helpers.Stages.SEALED, helpers.Stages.SENT]:
             raise ValueError('Given stage=%s not supported.' % stage)
 
-        # For the first stage, we need all projects that have commits since the last final
+        # For the first stage, we need all repos that have commits since the last final
         if stage == helpers.Stages.SEALED:
-            updated_projects = self.git.get_updated_projects(not stage == helpers.Stages.SEALED)
+            updated_repos = self.git.get_updated_repos(not stage == helpers.Stages.SEALED)
         else:
-            # If *not* at the beginning of a release cycle, we need all projects that were successfully transitioned
+            # If *not* at the beginning of a release cycle, we need all repos that were successfully transitioned
             # into the most recent stage. i.e. if we're ready to sign/finalize a release, we do that with all the
-            # projects that were sent (which is a stage name) to UAT
-            updated_projects = self.git.get_projects_in_stage(helpers.Stages(stage.value - 1))
+            # repos that were sent (which is a stage name) to UAT
+            updated_repos = self.git.get_repos_in_stage(helpers.Stages(stage.value - 1))
 
         bumped_counter = 0
-        for project in updated_projects:
+        for repo in updated_repos:
             # TODO: wrap in a try/except and roll back repos and jira on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
             try:
-                new_version = self._bump_repo_tags(project, stage)
+                new_version = self._bump_repo_tags(repo, stage)
                 # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time:
                 # https://api.slack.com/docs/message-attachments#attachment_limits
                 self._send_version_card(
                     msg.frm if stage == helpers.Stages.SEALED
                     else self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER']),
-                    project=project,
+                    repo=repo,
                     card_dict=dict(
-                        self._get_version_card(project),
+                        self._get_version_card(repo),
                         **{'New Version Name': new_version}
                     ),
                 )
@@ -252,28 +251,28 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             except NoJIRAIssuesFoundError:
                 fail(
                     'no_jira_issues',
-                    project=project.name,
-                    issues_url=self.jira.get_latest_issues_url(self._get_project_key(project)),
-                    merge_summary=self._get_merge_summary(project),
+                    repo=repo.name,
+                    issues_url=self.jira.get_latest_issues_url(self._get_project_key(repo)),
+                    merge_summary=self._get_merge_summary(repo),
                 )
             except helpers.InvalidStageTransitionError:
                 fail('invalid_transition')
             except helpers.InvalidVersionNameError:
                 fail('invalid_version')
 
-        if not bumped_counter > 0 and updated_projects:
+        if not bumped_counter > 0 and updated_repos:
             return fail('none_updated', active_stage=stage.verb)
-        if bumped_counter != len(updated_projects):
+        if bumped_counter != len(updated_repos):
             return fail(
                 'mismatched_updates',
                 active_stage=stage.verb,
-                updated_projects=len(updated_projects),
+                updated_repos=len(updated_repos),
                 bumped_counter=bumped_counter,
             )
         # FIXME: doesn't work as a yield for `send` because need to send to different channels
-        # yield f"{len(card_dict)} projects updated: \n\t• " + '\n\t• '.join(list(card_dict))
+        # yield f"{len(card_dict)} repos updated: \n\t• " + '\n\t• '.join(list(card_dict))
 
-        return f'{bumped_counter} / {len(self._get_project_names())} projects updated since last release.'
+        return f'{bumped_counter} / {len(self._get_project_names())} repos updated since last release.'
         # return "I have sent your sealed version set to the UAT channel. Awaiting their approval."
 
     def _fail(self, key: str, identifier: Identifier, stage: helpers.Stages, **kwargs) -> None:
@@ -296,10 +295,10 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         """Get the list of project names from the configuration"""
         return list(self.config['projects'])
 
-    def _get_project_key(self, project: ProjectPath) -> str:
-        """Get the Jira project key for the given project name"""
+    def _get_project_key(self, repo: Repo) -> str:
+        """Get the Jira project key for the given repo name"""
         # TODO: catch `KeyError`
-        return self.config['projects'][project.name]
+        return self.config['projects'][repo.name]
 
     def _get_jira_config(self) -> dict:
         """Return data required for initializing JiraClient"""
@@ -318,10 +317,10 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             'PROJECT_NAMES': self._get_project_names(),
         }
 
-    def _get_version_card(self, project: ProjectPath) -> Dict:
-        self.log.debug('%s: getting version card', project.name)
-        final = project.get_final_tag()
-        project_key = self._get_project_key(project)
+    def _get_version_card(self, repo: Repo) -> Dict:
+        self.log.debug('%s: getting version card', repo.name)
+        final = repo.get_final_tag()
+        project_key = self._get_project_key(repo)
         return {
             'Key': project_key,
             'Release Type': self.jira.get_release_type(project_key),
@@ -329,12 +328,12 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             'Previous Version': f'<{final.url}|{final.name}>',
             'Previous vCommit': final.sha,
 
-            'Merge Count': Release._get_merge_summary(project),
+            'Merge Count': Release._get_merge_summary(repo),
             # TODO: it would be nice to be able to dynamically pass in functions for fields to show up on the card
-            'New Migrations': project.get_migration_count(),  # FIXME: too django-specific
+            'New Migrations': repo.get_migration_count(),  # FIXME: too django-specific
 
             # To be removed for `fields`
-            'GitHub Tag Comparison': project.get_compare_url(),
+            'GitHub Tag Comparison': repo.get_compare_url(),
             # TODO: find a good public source for thumbnails; follow license
             'thumbnail': 'https://static.thenounproject.com/png/1662598-200.png',
         }
@@ -342,40 +341,40 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     def _send_version_card(
             self,
             identifier: Identifier,
-            project: ProjectPath,
+            repo: Repo,
             card_dict: Dict[str, Union[str, int]],
     ) -> None:
         """Send the Slack card containing version set information
 
         :param message:
-        :param project:
+        :param repo:
         :param card_dict: a dict of values to be displayed on the version card
         """
         self.send_card(  # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time
-            title=f'{project.name} - {card_dict.pop("New Version Name")}',
+            title=f'{repo.name} - {card_dict.pop("New Version Name")}',
             link=card_dict.pop('GitHub Tag Comparison'),
             to=identifier,
             thumbnail=card_dict.pop('thumbnail'),
             fields=tuple(card_dict.items()),
             color='green',
         )
-        self.log.debug('%s sent version card', project.name)
+        self.log.debug('%s sent version card', repo.name)
 
-    def _bump_repo_tags(self, project: ProjectPath, stage: str) -> str:
-        """Tag the project's repo with the next version's tags and push to origin
+    def _bump_repo_tags(self, repo: Repo, stage: str) -> str:
+        """Tag the repo's repo with the next version's tags and push to origin
 
         :param stage: the release stage to transition into (seal, send, sign)
         """
-        final = project.get_final_tag()
-        project_key = self._get_project_key(project)
+        final = repo.get_final_tag()
+        project_key = self._get_project_key(repo)
         new_version = self.jira.get_pending_version_name(
             project_key,
             stage,
-            project.get_rev_hash(ref="origin/develop")[:7],
+            repo.get_rev_hash(ref="origin/develop")[:7],
             final.name,
-            getattr(project.get_prerelease_tag(min_version=final), 'name', None),
+            getattr(repo.get_prerelease_tag(min_version=final), 'name', None),
         )
-        project.tag_develop(tag_name=new_version)
+        repo.tag_develop(tag_name=new_version)
         return new_version
 
     def _setup_repos(self):
@@ -396,9 +395,9 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 )
 
     @staticmethod
-    def _get_merge_summary(project: ProjectPath) -> str:
+    def _get_merge_summary(repo: Repo) -> str:
         """Return a link to GitHub's issue search showing the merged PRs """
         return '<{url}|{pr_count} merged PR(s)>'.format(
-            url=project.get_merged_prs_url(),
-            pr_count=project.get_merge_count(),
+            url=repo.get_merged_prs_url(),
+            pr_count=repo.get_merge_count(),
         )
