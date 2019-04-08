@@ -240,6 +240,7 @@ class RepoManager:
             Repo(
                 os.path.join(self.repos_root, project_name),
                 self.github.get_repo(project_name),
+                project_name,
             )
             for project_name in config['PROJECT_NAMES']
         ]
@@ -267,16 +268,10 @@ class RepoManager:
         return repos
 
 
-class Repo(namedtuple('Repo', ['path', 'github'])):
+class Repo(namedtuple('Repo', ['path', 'github', 'name'])):
     """Repos have a path and a limited set of attributes that can be derived from it"""
     def __repr__(self):
         return f'{self.__class__.__name__}({self.name})'
-
-    @property
-    def name(self):
-        """Get the full name of the repo e.g. 'netquity/err-github-jira-release'"""
-        import re
-        return re.match(r'^.*/(.*/.*)/?$', self.path)[1]  # TODO: pretty slow, make better
 
     @property
     def repos_root(self):
