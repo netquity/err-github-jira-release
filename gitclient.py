@@ -309,14 +309,6 @@ class Repo(namedtuple('Repo', ['path', 'github', 'name'])):
         logger.debug('%s get latest rev hash from reflog: %s', self.name, ref)
         return ref
 
-    def clean(self) -> CompletedProcess:
-        """Recursively remove files that aren't under source control"""
-        return _execute_path_git(self.path, ['clean', '-f'])
-
-    def reset_hard(self, ref: str) -> CompletedProcess:
-        """Do a hard reset on a repo to a target ref"""
-        return _execute_path_git(self.path, ['reset', '--hard', ref])
-
     def create_tag(self, tag_name: str) -> None:
         """Create a git tag on whatever commit HEAD is pointing at"""
         tag_name = format_version(tag_name)
