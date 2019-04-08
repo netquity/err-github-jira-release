@@ -543,13 +543,16 @@ class Repo(namedtuple('Repo', ['path', 'github', 'name'])):
 
     # TODO: this is very Django specific, figure out less opinionated way for non-Django users
     def get_migration_count(self) -> int:
-        """Get the number of new migration files since the latest final"""
-        tag_name = self.get_final_tag().name
+        """Get the number of new migration files added between last final and last """
+        final_tag = self.get_final_tag()
+        pre_tag = self.get_prerelease_tag(min_version=final_tag)
+        if pre_tag is None or final_tag >= pre_tag:
+            return 0
         return len(_execute_path_git(
             self.path,
             [
                 'diff', '--name-status', '--diff-filter=A',
-                f'HEAD..{tag_name}', '--', 'src/**/migrations/',  # FIXME: don't use HEAD
+                f'{pre_tag.name}..{final_tag.name}', '--', 'src/**/migrations/',
             ]
         ).stdout.strip().splitlines())
 
