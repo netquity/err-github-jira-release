@@ -75,6 +75,151 @@ def _execute_path_git(repo_root: str, git_command: list) -> CompletedProcess:
         raise GitCommandError()
 
 
+class RepoTag:
+    """A simple wrapper that combines a Repo with a Tag"""
+    __slots__ = ['_repo', '_tag']
+
+    def __init__(
+            self,
+            repo: 'Repo',
+            tag: NamedTuple('Tag', [
+                ('sha', str),
+                ('name', str),
+                ('date', str)
+            ])
+    ):
+        if not isinstance(tag, Tag):
+            raise TypeError(
+                f'Inappropriate type: `tag` argument must be of type `Tag` but got `{type(tag)}`'
+            )
+        self._repo = repo
+        self._tag = tag
+        logger.debug('%s inited RepoTag for %s', repo.name, self.name)
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}({self.sha}, {self.name})'
+
+    @property
+    def repo(self):
+        """Get the name of the repo this tag belongs to"""
+        return self._repo
+
+    @property
+    def name(self):
+        """Get the name of the tag: e.g. v5.0.0"""
+        return self._tag.name
+
+    @property
+    def sha(self):
+        """Get the short hash of the commit the tag is pointing at"""
+        return self._tag.sha
+
+    @property
+    def url(self):
+        """Get the URL of the GitHub release that corresponds with the tag"""
+        return f'{DOMAIN}/{self.repo.name}/releases/tag/{self.name}'
+
+    @property
+    def date(self):
+        """Get the creatordate of the tag"""
+        return self._tag.date
+
+    @staticmethod
+    def is_final_name(tag_name: str) -> bool:
+        """Determine whether the given tag string is a final tag string
+
+        >>> RepoTag.is_final_name('v1.0.0')
+        True
+        >>> RepoTag.is_final_name('v1.0.0-rc.1')
+        False
+        >>> RepoTag.is_final_name('v1.0.0-rc.1+sealed')
+        False
+        >>> RepoTag.is_final_name('v1.0.0+20130313144700')
+        True
+        """
+        import semver
+        try:
+            # tag_name[1:] because our tags have a leading `v`
+            return semver.parse(tag_name[1:]).get('prerelease') is None
+        except ValueError as exc:
+            logger.exception(
+                'Failure parsing tag string=%s',
+                tag_name,
+            )
+            raise exc
+
+    @staticmethod
+    def is_older_name(old_tag_name: str, new_tag_name: str) -> bool:
+        """Compare two version strings to determine if one is newer than the other
+
+        :param old_tag_name: version string expected to be sorted before the new_tag_name
+        :param new_tag_name: version string expected to be sorted after the old_tag_name
+        :return: True if expectations are correct and False otherwise
+        >>> RepoTag.is_older_name('v1.0.0', 'v2.0.0')
+        True
+        >>> RepoTag.is_older_name('v1.0.0', 'v1.0.0')
+        False
+        >>> RepoTag.is_older_name('v1.0.0', 'v1.0.0-rc.1')
+        False
+        >>> RepoTag.is_older_name('v1.0.0', 'v1.0.1-rc.1+sealed')
+        True
+        >>> RepoTag.is_older_name('1.0.0', '2.0.0')  # need to include the leading `v`
+        Traceback (most recent call last):
+            ...
+        ValueError: .0.0 is not valid SemVer string
+        """
+        from semver import match
+        return match(old_tag_name[1:], f"<{new_tag_name[1:]}")
+
+    @staticmethod
+    def _is_unparsed_tag_valid(repo: 'Repo', unparsed_tag: List[str]) -> bool:
+        def is_correct_field_length(tag_fields: List[str]) -> bool:
+            if len(tag_fields) == len(Tag._fields):
+                return True
+            logger.warning(
+                '%s: The given tag_string (tag %s) contains %s fields, expected %s; excluding from list',
+                repo.name,
+                tag_fields[1] if len(tag_fields) >= 2 else 'MISSINGTAG',
+                len(tag_fields),
+                len(Tag._fields),
+            )
+            return False
+
+        def is_correct_version_format(tag_fields: List[str]) -> bool:
+            if tag_fields[1][:1] == 'v':
+                return True
+            logger.warning(
+                (
+                    '%s: The given tag_string (tag %s) contains a malformed '
+                    'named, must start with "v"; excluding from list',
+                ),
+                repo.name,
+                tag_fields[1],
+            )
+            return False
+
+        def is_parsable(tag_name: str):
+            try:
+                cached_parse(tag_name)
+                return True
+            except InvalidVersion:
+                logger.warning(
+                    (
+                        '%s: the given tag_name (tag %s) could not be parsed '
+                        'with `packaging.version.parse`; excluding from list'
+                    ),
+                    repo.name,
+                    tag_name,
+                )
+                return False
+
+        return (
+            is_correct_field_length(unparsed_tag)
+            and is_correct_version_format(unparsed_tag)
+            and is_parsable(unparsed_tag[1])
+        )
+
+
 class RepoManager:
     """Manage local repos and their remotes
 
@@ -86,150 +231,6 @@ class RepoManager:
           recent revision hash from the reflog; `get_merged_prs_url` will get show merged PRs since the latest final
           release.
     """
-    class RepoTag:
-        """A simple wrapper that combines a Repo with a Tag"""
-        __slots__ = ['_repo', '_tag']
-
-        def __init__(
-                self,
-                repo: 'Repo',
-                tag: NamedTuple('Tag', [
-                    ('sha', str),
-                    ('name', str),
-                    ('date', str)
-                ])
-        ):
-            if not isinstance(tag, Tag):
-                raise TypeError(
-                    f'Inappropriate type: `tag` argument must be of type `Tag` but got `{type(tag)}`'
-                )
-            self._repo = repo
-            self._tag = tag
-            logger.debug('%s inited RepoTag for %s', repo.name, self.name)
-
-        def __repr__(self):
-            return f'{self.__class__.__name__}({self.sha}, {self.name})'
-
-        @property
-        def repo(self):
-            """Get the name of the repo this tag belongs to"""
-            return self._repo
-
-        @property
-        def name(self):
-            """Get the name of the tag: e.g. v5.0.0"""
-            return self._tag.name
-
-        @property
-        def sha(self):
-            """Get the short hash of the commit the tag is pointing at"""
-            return self._tag.sha
-
-        @property
-        def url(self):
-            """Get the URL of the GitHub release that corresponds with the tag"""
-            return f'{DOMAIN}/{self.repo.name}/releases/tag/{self.name}'
-
-        @property
-        def date(self):
-            """Get the creatordate of the tag"""
-            return self._tag.date
-
-        @staticmethod
-        def is_final_name(tag_name: str) -> bool:
-            """Determine whether the given tag string is a final tag string
-
-            >>> RepoManager.RepoTag.is_final_name('v1.0.0')
-            True
-            >>> RepoManager.RepoTag.is_final_name('v1.0.0-rc.1')
-            False
-            >>> RepoManager.RepoTag.is_final_name('v1.0.0-rc.1+sealed')
-            False
-            >>> RepoManager.RepoTag.is_final_name('v1.0.0+20130313144700')
-            True
-            """
-            import semver
-            try:
-                # tag_name[1:] because our tags have a leading `v`
-                return semver.parse(tag_name[1:]).get('prerelease') is None
-            except ValueError as exc:
-                logger.exception(
-                    'Failure parsing tag string=%s',
-                    tag_name,
-                )
-                raise exc
-
-        @staticmethod
-        def is_older_name(old_tag_name: str, new_tag_name: str) -> bool:
-            """Compare two version strings to determine if one is newer than the other
-
-            :param old_tag_name: version string expected to be sorted before the new_tag_name
-            :param new_tag_name: version string expected to be sorted after the old_tag_name
-            :return: True if expectations are correct and False otherwise
-            >>> RepoManager.RepoTag.is_older_name('v1.0.0', 'v2.0.0')
-            True
-            >>> RepoManager.RepoTag.is_older_name('v1.0.0', 'v1.0.0')
-            False
-            >>> RepoManager.RepoTag.is_older_name('v1.0.0', 'v1.0.0-rc.1')
-            False
-            >>> RepoManager.RepoTag.is_older_name('v1.0.0', 'v1.0.1-rc.1+sealed')
-            True
-            >>> RepoManager.RepoTag.is_older_name('1.0.0', '2.0.0')  # need to include the leading `v`
-            Traceback (most recent call last):
-                ...
-            ValueError: .0.0 is not valid SemVer string
-            """
-            from semver import match
-            return match(old_tag_name[1:], f"<{new_tag_name[1:]}")
-
-        @staticmethod
-        def _is_unparsed_tag_valid(repo: 'Repo', unparsed_tag: List[str]) -> bool:
-            def is_correct_field_length(tag_fields: List[str]) -> bool:
-                if len(tag_fields) == len(Tag._fields):
-                    return True
-                logger.warning(
-                    '%s: The given tag_string (tag %s) contains %s fields, expected %s; excluding from list',
-                    repo.name,
-                    tag_fields[1] if len(tag_fields) >= 2 else 'MISSINGTAG',
-                    len(tag_fields),
-                    len(Tag._fields),
-                )
-                return False
-
-            def is_correct_version_format(tag_fields: List[str]) -> bool:
-                if tag_fields[1][:1] == 'v':
-                    return True
-                logger.warning(
-                    (
-                        '%s: The given tag_string (tag %s) contains a malformed '
-                        'named, must start with "v"; excluding from list',
-                    ),
-                    repo.name,
-                    tag_fields[1],
-                )
-                return False
-
-            def is_parsable(tag_name: str):
-                try:
-                    cached_parse(tag_name)
-                    return True
-                except InvalidVersion:
-                    logger.warning(
-                        (
-                            '%s: the given tag_name (tag %s) could not be parsed '
-                            'with `packaging.version.parse`; excluding from list'
-                        ),
-                        repo.name,
-                        tag_name,
-                    )
-                    return False
-
-            return (
-                is_correct_field_length(unparsed_tag)
-                and is_correct_version_format(unparsed_tag)
-                and is_parsable(unparsed_tag[1])
-            )
-
     __slots__ = ['repos_root', 'repos', 'github']
 
     def __init__(self, config: dict):
@@ -370,7 +371,7 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
         logger.debug('%s: %s merges to develop since %s', self.name, merge_count, latest_tag.name)
         return merge_count
 
-    def get_prerelease_tag(self, min_version: Optional[RepoManager.RepoTag] = None) -> Optional[RepoManager.RepoTag]:
+    def get_prerelease_tag(self, min_version: Optional[RepoTag] = None) -> Optional[RepoTag]:
         """Get the latest prerelease tag name
 
         :param min_version: if included, will ignore all versions below this one
@@ -387,7 +388,7 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
         except AttributeError:
             logger.debug('%s get prerelease tag, min_version=%s: None', self.name, getattr(min_version, 'name', None))
             return None
-        tag = pre_tag if RepoManager.RepoTag.is_older_name(min_version.name, pre_tag.name) else None
+        tag = pre_tag if RepoTag.is_older_name(min_version.name, pre_tag.name) else None
         logger.debug('%s get prerelease tag, min_version=%s: %s', self.name, min_version, getattr(tag, 'name', None))
         return tag
 
@@ -556,14 +557,14 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
             Repo._get_latest_tag(self, since_final)
         ) > 0
 
-    def _get_merge_count_since(self, tag: RepoManager.RepoTag) -> int:
+    def _get_merge_count_since(self, tag: RepoTag) -> int:
         """Get the number of merges to develop since the given tag"""
         # The first result will be the merge commit from last release
         count = len(self._get_merges_since(tag)) - 1
         logger.debug('%s merge count since %s: %s', self.name, tag.name, count)
         return count
 
-    def _get_merges_since(self, tag: RepoManager.RepoTag, *flags: List[str]) -> List[str]:
+    def _get_merges_since(self, tag: RepoTag, *flags: List[str]) -> List[str]:
         """Get the git log entries to develop since the given tag"""
         # FIXME: assumes master and developed have not diverged, which is not a safe assumption at all
         return _execute_path_git(
@@ -645,7 +646,7 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
         tag_lines = Repo._get_tag_lines(repo)
         for unparsed_tag in tag_lines:
             # filters out "bad" tags and logs each one
-            if RepoManager.RepoTag._is_unparsed_tag_valid(repo, unparsed_tag):
+            if RepoTag._is_unparsed_tag_valid(repo, unparsed_tag):
                 tags.append(Tag(*unparsed_tag))
                 logger.debug('%s: successfully parsed tag %s', repo.name, tags[-1].name)
         logger.debug('%s: %s/%s tags validated', repo.name, len(tags), len(tag_lines))
@@ -653,7 +654,7 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
         return sorted(tags, key=lambda tag: cached_parse(tag.name), reverse=True)
 
     @classmethod
-    def _get_latest_tag(cls, repo: 'Repo', find_final: bool = True) -> Optional[RepoManager.RepoTag]:
+    def _get_latest_tag(cls, repo: 'Repo', find_final: bool = True) -> Optional[RepoTag]:
         """Get the latest final or prerelease tag
 
         Final tags do not contain a prerelease segment, but may contain a SemVer metadata segment.
@@ -669,20 +670,20 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
         """
         tag = cls._find_tag(
             repo,
-            RepoManager.RepoTag.is_final_name if find_final
-            else lambda tag: not RepoManager.RepoTag.is_final_name(tag)
+            RepoTag.is_final_name if find_final
+            else lambda tag: not RepoTag.is_final_name(tag)
         )
         logger.debug('%s get latest tag (find_final=%s): %s', repo.name, find_final, getattr(tag, 'name', None))
         return tag
 
     @classmethod
-    def _find_tag(cls, repo: 'Repo', test: Callable[[str], bool]) -> Optional[RepoManager.RepoTag]:
+    def _find_tag(cls, repo: 'Repo', test: Callable[[str], bool]) -> Optional[RepoTag]:
         """Return the first tag that passes a given test or `None` if none found
 
         The order of the tags is important when using this method.
         """
         try:
-            return RepoManager.RepoTag(
+            return RepoTag(
                 repo,
                 next((tag for tag in cls._get_tags(repo) if test(tag.name)), None),
             )
