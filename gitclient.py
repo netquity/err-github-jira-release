@@ -86,7 +86,7 @@ class GitClient:
           recent revision hash from the reflog; `get_merged_prs_url` will get show merged PRs since the latest final
           release.
     """
-    class TagData:
+    class RepoTag:
         """A simple wrapper that combines a Repo with a Tag"""
         __slots__ = ['_repo', '_tag']
 
@@ -105,7 +105,7 @@ class GitClient:
                 )
             self._repo = repo
             self._tag = tag
-            logger.debug('%s inited TagData for %s', repo.name, self.name)
+            logger.debug('%s inited RepoTag for %s', repo.name, self.name)
 
         def __repr__(self):
             return f'{self.__class__.__name__}({self.sha}, {self.name})'
@@ -139,13 +139,13 @@ class GitClient:
         def is_final_name(tag_name: str) -> bool:
             """Determine whether the given tag string is a final tag string
 
-            >>> GitClient.TagData.is_final_name('v1.0.0')
+            >>> GitClient.RepoTag.is_final_name('v1.0.0')
             True
-            >>> GitClient.TagData.is_final_name('v1.0.0-rc.1')
+            >>> GitClient.RepoTag.is_final_name('v1.0.0-rc.1')
             False
-            >>> GitClient.TagData.is_final_name('v1.0.0-rc.1+sealed')
+            >>> GitClient.RepoTag.is_final_name('v1.0.0-rc.1+sealed')
             False
-            >>> GitClient.TagData.is_final_name('v1.0.0+20130313144700')
+            >>> GitClient.RepoTag.is_final_name('v1.0.0+20130313144700')
             True
             """
             import semver
@@ -166,15 +166,15 @@ class GitClient:
             :param old_tag_name: version string expected to be sorted before the new_tag_name
             :param new_tag_name: version string expected to be sorted after the old_tag_name
             :return: True if expectations are correct and False otherwise
-            >>> GitClient.TagData.is_older_name('v1.0.0', 'v2.0.0')
+            >>> GitClient.RepoTag.is_older_name('v1.0.0', 'v2.0.0')
             True
-            >>> GitClient.TagData.is_older_name('v1.0.0', 'v1.0.0')
+            >>> GitClient.RepoTag.is_older_name('v1.0.0', 'v1.0.0')
             False
-            >>> GitClient.TagData.is_older_name('v1.0.0', 'v1.0.0-rc.1')
+            >>> GitClient.RepoTag.is_older_name('v1.0.0', 'v1.0.0-rc.1')
             False
-            >>> GitClient.TagData.is_older_name('v1.0.0', 'v1.0.1-rc.1+sealed')
+            >>> GitClient.RepoTag.is_older_name('v1.0.0', 'v1.0.1-rc.1+sealed')
             True
-            >>> GitClient.TagData.is_older_name('1.0.0', '2.0.0')  # need to include the leading `v`
+            >>> GitClient.RepoTag.is_older_name('1.0.0', '2.0.0')  # need to include the leading `v`
             Traceback (most recent call last):
                 ...
             ValueError: .0.0 is not valid SemVer string
@@ -370,7 +370,7 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
         logger.debug('%s: %s merges to develop since %s', self.name, merge_count, latest_tag.name)
         return merge_count
 
-    def get_prerelease_tag(self, min_version: Optional[GitClient.TagData] = None) -> Optional[GitClient.TagData]:
+    def get_prerelease_tag(self, min_version: Optional[GitClient.RepoTag] = None) -> Optional[GitClient.RepoTag]:
         """Get the latest prerelease tag name
 
         :param min_version: if included, will ignore all versions below this one
@@ -387,7 +387,7 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
         except AttributeError:
             logger.debug('%s get prerelease tag, min_version=%s: None', self.name, getattr(min_version, 'name', None))
             return None
-        tag = pre_tag if GitClient.TagData.is_older_name(min_version.name, pre_tag.name) else None
+        tag = pre_tag if GitClient.RepoTag.is_older_name(min_version.name, pre_tag.name) else None
         logger.debug('%s get prerelease tag, min_version=%s: %s', self.name, min_version, getattr(tag, 'name', None))
         return tag
 
@@ -543,7 +543,7 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
             ]
         ).stdout.strip().splitlines())
 
-    def get_final_tag(self) -> Optional['TagData']:
+    def get_final_tag(self) -> Optional['RepoTag']:
         """Get the latest final tag for a given repo name"""
         return Repo._get_latest_tag(
             repo=self,
@@ -556,14 +556,14 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
             Repo._get_latest_tag(self, since_final)
         ) > 0
 
-    def _get_merge_count_since(self, tag: GitClient.TagData) -> int:
+    def _get_merge_count_since(self, tag: GitClient.RepoTag) -> int:
         """Get the number of merges to develop since the given tag"""
         # The first result will be the merge commit from last release
         count = len(self._get_merges_since(tag)) - 1
         logger.debug('%s merge count since %s: %s', self.name, tag.name, count)
         return count
 
-    def _get_merges_since(self, tag: GitClient.TagData, *flags: List[str]) -> List[str]:
+    def _get_merges_since(self, tag: GitClient.RepoTag, *flags: List[str]) -> List[str]:
         """Get the git log entries to develop since the given tag"""
         # FIXME: assumes master and developed have not diverged, which is not a safe assumption at all
         return _execute_path_git(
@@ -645,7 +645,7 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
         tag_lines = Repo._get_tag_lines(repo)
         for unparsed_tag in tag_lines:
             # filters out "bad" tags and logs each one
-            if GitClient.TagData._is_unparsed_tag_valid(repo, unparsed_tag):
+            if GitClient.RepoTag._is_unparsed_tag_valid(repo, unparsed_tag):
                 tags.append(Tag(*unparsed_tag))
                 logger.debug('%s: successfully parsed tag %s', repo.name, tags[-1].name)
         logger.debug('%s: %s/%s tags validated', repo.name, len(tags), len(tag_lines))
@@ -653,7 +653,7 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
         return sorted(tags, key=lambda tag: cached_parse(tag.name), reverse=True)
 
     @classmethod
-    def _get_latest_tag(cls, repo: 'Repo', find_final: bool = True) -> Optional[GitClient.TagData]:
+    def _get_latest_tag(cls, repo: 'Repo', find_final: bool = True) -> Optional[GitClient.RepoTag]:
         """Get the latest final or prerelease tag
 
         Final tags do not contain a prerelease segment, but may contain a SemVer metadata segment.
@@ -669,20 +669,20 @@ class Repo(namedtuple('Repo', ['path', 'github'])):
         """
         tag = cls._find_tag(
             repo,
-            GitClient.TagData.is_final_name if find_final
-            else lambda tag: not GitClient.TagData.is_final_name(tag)
+            GitClient.RepoTag.is_final_name if find_final
+            else lambda tag: not GitClient.RepoTag.is_final_name(tag)
         )
         logger.debug('%s get latest tag (find_final=%s): %s', repo.name, find_final, getattr(tag, 'name', None))
         return tag
 
     @classmethod
-    def _find_tag(cls, repo: 'Repo', test: Callable[[str], bool]) -> Optional[GitClient.TagData]:
+    def _find_tag(cls, repo: 'Repo', test: Callable[[str], bool]) -> Optional[GitClient.RepoTag]:
         """Return the first tag that passes a given test or `None` if none found
 
         The order of the tags is important when using this method.
         """
         try:
-            return GitClient.TagData(
+            return GitClient.RepoTag(
                 repo,
                 next((tag for tag in cls._get_tags(repo) if test(tag.name)), None),
             )
