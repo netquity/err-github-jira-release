@@ -19,6 +19,7 @@ logger = logging.getLogger(os.path.basename(__file__))
 
 try:
     from jira import JIRA, JIRAError
+    from jira.resources import Version
     from github import Github
 except ImportError:
     logger.error("Please install 'jira' and 'pygithub' Python packages")
@@ -137,12 +138,10 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     @botcmd
     def sign(self, msg: Message, args):  # pylint:disable=unused-argument
         from gitclient import GitCommandError
-        fields = ()
         updated_projects = self.git.get_projects_in_stage(helpers.Stages.SENT)
         for project in updated_projects:
             key = self._get_project_key(project)
             final = project.get_final_tag()
-            # new_version_name = self._bump_repo_tags(project, helpers.Stages.SIGNED)  # NOTE: comes with no `v`
             # FIXME: catch InvalidVersionNameError and InvalidStageTransitionError
             new_version_name = self.jira.get_pending_version_name(
                 key,
@@ -171,11 +170,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     # TODO: need better exception handling
                     project.add_release_notes_to_develop(new_version_name, release_notes)
                 else:
-                    # FIXME: need to get THIS sha, not the one of most recent commit earlier
-                    project.merge_and_create_release_commit(
-                        version_name=new_version_name,
-                        release_notes=release_notes,
-                    )
+                    project.merge_and_create_release_commit(new_version_name, release_notes)
             except GitCommandError:
                 self.log.exception(
                     'Unable to merge release branch to master and create release commit.'
@@ -186,22 +181,39 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     'git',
                 )
                 return exc_message
-
             # Need the merge commit sha as part of the version metadata
-            new_version_name = helpers.change_sha(new_version_name, project.ref[:7])
-            JiraClient.change_version_name(jira_version, new_version_name)
-            project.create_tag(tag_name=new_version_name)
-            project.create_ref(version_name=new_version_name)
-            project.create_release(release_notes=release_notes, version_name=new_version_name)
-            if not is_hotfix:
-                project.update_develop()
+            Release._create_final_release(new_version_name, jira_version, project, release_notes, is_hotfix)
+
+            self._send_version_card(
+                self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER']),
+                project=project,
+                card_dict=dict(
+                    self._get_version_card(project),
+                    **{'New Version Name': new_version_name}
+                ),
+            )
+
+    @staticmethod
+    def _create_final_release(
+            new_version_name: str,
+            jira_version: Version,
+            project: ProjectPath,
+            release_notes: str,
+            is_hotfix: bool = False,
+    ) -> None:
+        new_version_name = helpers.change_sha(new_version_name, project.ref[:7])
+        JiraClient.change_version_name(jira_version, new_version_name)
+        project.create_tag(tag_name=new_version_name)
+        project.create_ref(version_name=new_version_name)
+        project.create_release(release_notes=release_notes, version_name=new_version_name)
+        if not is_hotfix:
+            project.update_develop()
 
     def _bump_projects_set(self, msg: Message, stage: helpers.Stages) -> Optional[str]:
         """Transition the entire set of updated projects to the given stage
 
         This method produces side-effects on Jira, Git (local and origin), and whatever chat backend is being used:
         - git: create tag and ref
-        - jira: create version
         - backend: send cards and messages
         """
         # TODO: need to propagate errors and revert all changes if anything fails
