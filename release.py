@@ -12,6 +12,7 @@ from errbot.botplugin import recurse_check_structure
 from jiraclient import JiraClient, NoJIRAIssuesFoundError
 from errbot.backends.base import Message, Identifier
 from gitclient import RepoManager, Repo
+from gitclient import RepoManager, Repo, GitCommandError
 
 import helpers
 
@@ -62,14 +63,15 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         - not contain any database migrations
     """
     error_messages = {
-        'no_jira_issues': '{project}: no <{issues_url}|Jira issues> found ({merge_summary}).',
-        'invalid_transition': 'Invalid stage transition attempted when bumping {project}.',
-        'invalid_version': 'Invalid pre_version given when bumping {project}.',
+        'no_jira_issues': '{repo}: no <{issues_url}|Jira issues> found ({merge_summary}).',
+        'invalid_transition': 'Invalid stage transition attempted when bumping {repo}.',
+        'invalid_version': 'Invalid pre_version given when bumping {repo}.',
         'none_updated': '{active_stage}: no projects updated.',
         'mismatched_updates': (
             '{active_stage}: number of updated projects ({updated_projects}) '
             'does not match number of bumped projects ({bumped_counter}).'
         ),
+        'unknown_git_error': '{repo}: unknown error encountered when performing git operations.'
     }
 
     def activate(self):
@@ -256,9 +258,11 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     merge_summary=self._get_merge_summary(repo),
                 )
             except helpers.InvalidStageTransitionError:
-                fail('invalid_transition')
+                fail('invalid_transition', repo=repo.name)
             except helpers.InvalidVersionNameError:
-                fail('invalid_version')
+                fail('invalid_version', repo=repo.name)
+            except GitCommandError:
+                return fail('unknown_git_error', repo=repo.name)
 
         if not bumped_counter > 0 and updated_repos:
             return fail('none_updated', active_stage=stage.verb)
