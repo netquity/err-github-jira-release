@@ -11,7 +11,6 @@ from errbot import BotPlugin, botcmd, ValidationException
 from errbot.botplugin import recurse_check_structure
 from jiraclient import JiraClient, NoJIRAIssuesFoundError
 from errbot.backends.base import Message, Identifier
-from gitclient import RepoManager, Repo
 from gitclient import RepoManager, Repo, GitCommandError
 
 import helpers
