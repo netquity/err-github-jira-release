@@ -246,6 +246,25 @@ class JiraClient:
         logger.info('%s: created new Jira version %s (released=%s)', project_key.upper(), new_version, released)
         return version
 
+    def finalize_issues(self, project_key: str, new_version_name: str) -> Version:
+        """Create a Version and set it on all eligible tickets"""
+        jira_version = self.create_version(
+            project_key,
+            new_version_name,
+            released=True,
+        )
+        self.set_fix_version(
+            project_key,
+            jira_version.name,
+            is_hotfix=False,  # FIXME: need to actually do something for hotfixes
+        )
+        logger.info(
+            '%s: created new_version_name=%s in Jira and set it on eligible tickets',
+            project_key.upper(),
+            new_version_name,
+        )
+        return jira_version
+
     @staticmethod
     def change_version_name(version: Version, new_name: str) -> Version:
         """Change the Jira version's name"""

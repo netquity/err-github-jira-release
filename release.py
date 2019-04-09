@@ -30,6 +30,14 @@ MISSING_ERROR_MESSAGE = (
 )
 
 
+class ReleaseError(Exception):
+    """A high-level error during the release process"""
+
+
+class ReleaseFinalizationError(ReleaseError):
+    """An error occurred while creating a final release"""
+
+
 class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     """Perform version releases between JIRA and GitHub.
 
@@ -137,76 +145,22 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         return self._bump_repos_set(msg, helpers.Stages.SENT)
 
     @botcmd
-    def sign(self, msg: Message, args):  # pylint:disable=unused-argument
-        from gitclient import GitCommandError
-        updated_repos = self.git.get_repos_in_stage(helpers.Stages.SENT)
-        for repo in updated_repos:
-            key = self._get_project_key(repo)
-            final = repo.get_final_tag()
-            # FIXME: catch InvalidVersionNameError and InvalidStageTransitionError
-            new_version_name = self.jira.get_pending_version_name(
-                key,
-                helpers.Stages.SIGNED,
-                repo.get_rev_hash(ref="origin/develop")[:7],
-                final.name,
-                getattr(repo.get_prerelease_tag(min_version=final), 'name', None),
-            )
-            jira_version = self.jira.create_version(
-                key,
-                new_version_name,
-                released=True,
-            )
-            self.jira.set_fix_version(
-                key,
-                jira_version.name,
-                is_hotfix=False,  # FIXME: need to actually do something for hotfixes
-            )
-            # TODO: add release notes to changelog file
-            # FIXME: catch IssueMergesCountMismatchError
-            release_notes = self.jira.get_release_notes(jira_version, repo.get_merge_logs())
-            is_hotfix = False  # TODO: TEMPORARY SHIM; REMOVE!!!
-            try:
-                if is_hotfix:
-                    # TODO: need better exception handling
-                    repo.add_release_notes_to_develop(new_version_name, release_notes)
-                else:
-                    repo.merge_and_create_release_commit(new_version_name, release_notes)
-            except GitCommandError:
-                self.log.exception(
-                    'Unable to merge release branch to master and create release commit.'
-                )
-                exc_message = JiraClient.delete_version(
-                    key,
-                    jira_version,
-                    'git',
-                )
-                return exc_message
-            # Need the merge commit sha as part of the version metadata
-            Release._create_final_release(new_version_name, jira_version, repo, release_notes, is_hotfix)
-
-            self._send_version_card(
-                self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER']),
-                repo=repo,
-                card_dict=dict(
-                    self._get_version_card(repo),
-                    **{'New Version Name': new_version_name}
-                ),
-            )
+    def sign(self, msg: Message, args) -> Optional[str]:  # pylint:disable=unused-argument
+        """Finalize the release by creating a final Jira version and corresponding git tags"""
+        return self._bump_repos_set(msg, helpers.Stages.SIGNED)
 
     @staticmethod
-    def _create_final_release(
+    def _finalize_repo(
             new_version_name: str,
-            jira_version: Version,
             repo: Repo,
             release_notes: str,
             is_hotfix: bool = False,
     ) -> None:
-        new_version_name = helpers.change_sha(new_version_name, repo.ref[:7])
-        JiraClient.change_version_name(jira_version, new_version_name)
+        """Create a git tag marking the release and push release notes to GitHub"""
         repo.create_tag(tag_name=new_version_name)
         repo.create_ref(version_name=new_version_name)
         repo.create_release(release_notes=release_notes, version_name=new_version_name)
-        if not is_hotfix:
+        if not is_hotfix:  # Don't merge hotfixes to dev
             repo.update_develop()
 
     def _bump_repos_set(self, msg: Message, stage: helpers.Stages) -> Optional[str]:
@@ -219,7 +173,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         # TODO: need to propagate errors and revert all changes if anything fails
         fail = partial(self._fail, identifier=msg.frm, stage=stage)
 
-        if stage not in [helpers.Stages.SEALED, helpers.Stages.SENT]:
+        if stage not in [helpers.Stages.SEALED, helpers.Stages.SENT, helpers.Stages.SIGNED]:
             raise ValueError('Given stage=%s not supported.' % stage)
 
         # For the first stage, we need all repos that have commits since the last final
@@ -245,7 +199,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                     else self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER']),
                     repo=repo,
                     card_dict=dict(
-                        self._get_version_card(repo),
+                        self._get_version_card(repo, release_type),
                         **{'New Version Name': new_version}
                     ),
                 )
@@ -370,16 +324,45 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         :param stage: the release stage to transition into (seal, send, sign)
         """
         final = repo.get_final_tag()
-        project_key = self._get_project_key(repo)
-        new_version = self.jira.get_pending_version_name(
-            project_key,
+        key = self._get_project_key(repo)
+        new_version_name = self.jira.get_pending_version_name(
+            key,
             stage,
             repo.get_rev_hash(ref="origin/develop")[:7],
             final.name,
             getattr(repo.get_prerelease_tag(min_version=final), 'name', None),
         )
-        repo.tag_develop(tag_name=new_version)
-        return new_version
+        if stage == helpers.Stages.SIGNED:
+            self.prepare_final(repo, new_version_name)
+        else:
+            # TODO: if stage == sign, create Jira version and set_fix_version on tickets; also get changelog
+            repo.tag_develop(tag_name=new_version_name)
+        return new_version_name
+
+    def prepare_final(self, repo: Repo, new_version_name: str) -> None:
+        """Create the Jira version and get the changelog from it before pushing tags to GitHub"""
+        key = self._get_project_key(repo)
+        jira_version = self.jira.finalize_issues(key, new_version_name)
+        # FIXME: catch IssueMergesCountMismatchError
+        release_notes = self.jira.get_release_notes(jira_version, repo.get_merge_logs())
+        is_hotfix = False  # TODO: TEMPORARY SHIM; REMOVE!!!
+        try:
+            if is_hotfix:  # TODO: need better exception handling
+                repo.add_release_notes_to_develop(new_version_name, release_notes)
+            else:
+                repo.merge_and_create_release_commit(new_version_name, release_notes)
+        except GitCommandError:
+            self.log.exception(
+                '%s: Unable to merge release branch to master and create release commit for new_version_name=%s.',
+                repo.name,
+                new_version_name,
+            )
+            JiraClient.delete_version(key, jira_version)
+            raise ReleaseFinalizationError()
+        new_version_name = helpers.change_sha(new_version_name, repo.ref[:7])  # sha changed after merge commit
+        JiraClient.change_version_name(jira_version, new_version_name)
+        # Need the merge commit sha as part of the version metadata
+        Release._finalize_repo(new_version_name, repo, release_notes, is_hotfix)
 
     def _setup_repos(self):
         """Clone the projects in the configuration into the `REPOS_ROOT` if they do not exist already."""
