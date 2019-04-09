@@ -572,7 +572,7 @@ class Repo(namedtuple('Repo', ['path', 'github', 'name'])):
     def _get_merge_count_since(self, tag: RepoTag) -> int:
         """Get the number of merges to develop since the given tag"""
         # The first result will be the merge commit from last release
-        count = len(self._get_merges_since(tag)) - 1
+        count = len(self._get_merges_since(tag))
         logger.debug('%s merge count since %s: %s', self.name, tag.name, count)
         return count
 
