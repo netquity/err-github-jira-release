@@ -140,10 +140,11 @@ class JiraClient:
                     version.name,
                 )
                 raise IssueMergesCountMismatchError(
-                    '%s got %s Jira issues but %s merged PRs.' %
-                    project_name,
-                    len(issues),
-                    len(merge_logs),
+                    '%s got %s Jira issues but %s merged PRs.' % (
+                        project_name,
+                        len(issues),
+                        len(merge_logs),
+                    )
                 )
             for issue in issues:
                 issue.sha = next(merge.sha for merge in merge_logs if merge.key == issue.key)
