@@ -237,6 +237,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             # TODO: wrap in a try/except and roll back repos and jira on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
             try:
+                release_type = self.jira.get_release_type(self._get_project_key(repo))
                 new_version = self._bump_repo_tags(repo, stage)
                 # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time:
                 # https://api.slack.com/docs/message-attachments#attachment_limits
@@ -321,13 +322,13 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             'PROJECT_NAMES': self._get_project_names(),
         }
 
-    def _get_version_card(self, repo: Repo) -> Dict:
+    def _get_version_card(self, repo: Repo, release_type: str) -> Dict:
         self.log.debug('%s: getting version card', repo.name)
         final = repo.get_final_tag()
         project_key = self._get_project_key(repo)
         return {
             'Key': project_key,
-            'Release Type': self.jira.get_release_type(project_key),
+            'Release Type': release_type,
 
             'Previous Version': f'<{final.url}|{final.name}>',
             'Previous vCommit': final.sha,
