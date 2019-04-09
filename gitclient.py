@@ -414,7 +414,7 @@ class Repo(namedtuple('Repo', ['path', 'github', 'name'])):
         logger.info('%s: created ref %s', self.name, version_name)
 
     def create_release(self, release_notes: str, version_name: str):
-        """Create a GitHub release object and push it origin
+        """Create a GitHub release object and push it to origin
 
         https://developer.github.com/v3/repos/releases/#create-a-release
         """
