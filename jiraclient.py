@@ -42,6 +42,10 @@ class IssueMergesCountMismatchError(JiraClientError):
     """The number pending Jira issues does not match the number of merged PRs."""
 
 
+class JiraVersionDeleteError(JiraClientError):
+    """Could not successfully delete a Jira version"""
+
+
 class JiraClient:
     """Limited wrapper for the Jira REST API"""
     def __init__(self, config: dict):
@@ -251,8 +255,8 @@ class JiraClient:
         return version
 
     @staticmethod
-    def delete_version(project_key: str, version: Version, failed_command: str = 'JIRA') -> Optional[str]:
-        """Delete a JIRA version.
+    def delete_version(project_key: str, version: Version) -> None:
+        """Delete a JIRA version
 
         Used to undo created versions when subsequent operations fail."""
         try:
@@ -260,17 +264,12 @@ class JiraClient:
             return logger.info('%s: deleted Jira version %s', project_key.upper(), version.name)
         except JIRAError:
             exc_message = (
-                'Unable to complete JIRA request for project_key={} and unable to clean up new version={}'.format(
-                    project_key.upper(),
-                    version.name,
-                )
+                'Unable to complete JIRA request for project_key=%s and unable to clean up new version=%s',
+                project_key.upper(),
+                version.name,
             )
-            return exc_message
-
-        return 'Unable to complete %s operation for project_key=%s. JIRA version deleted.' % (
-            failed_command,
-            project_key.upper(),
-        )
+            logger.exception(exc_message)
+            raise JiraVersionDeleteError(exc_message)
 
     @staticmethod
     def get_issue_search_string(project_key: str) -> str:
