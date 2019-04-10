@@ -132,6 +132,23 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
 
         configuration.update({'projects': projects_config})
 
+    def _setup_repos(self):
+        """Clone the projects in the configuration into the `REPOS_ROOT` if they do not exist already."""
+        try:
+            os.makedirs(self.config['REPOS_ROOT'])
+        except OSError as exc:
+            # If the error is that the directory already exists, we don't care about it
+            if exc.errno != errno.EEXIST:
+                raise exc
+
+        for project in self.config['projects']:
+            if not os.path.exists(os.path.join(self.config['REPOS_ROOT'], project)):
+                # Possible race condition if folder somehow gets created between check and creation
+                helpers.run_subprocess(
+                    ['git', 'clone', f"git@github.com:{project}.git", project],
+                    cwd=self.config['REPOS_ROOT'],
+                )
+
     @botcmd
     def seal(self, msg: Message, args) -> Optional[str]:  # pylint:disable=unused-argument
         """Initiate the release sequence by tagging updated projects"""
@@ -150,20 +167,6 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
     def sign(self, msg: Message, args) -> Optional[str]:  # pylint:disable=unused-argument
         """Finalize the release by creating a final Jira version and corresponding git tags"""
         return self._bump_repos_set(msg, helpers.Stages.SIGNED)
-
-    @staticmethod
-    def _finalize_repo(
-            new_version_name: str,
-            repo: Repo,
-            release_notes: str,
-            is_hotfix: bool = False,
-    ) -> None:
-        """Create a git tag marking the release and push release notes to GitHub"""
-        repo.create_tag(tag_name=new_version_name)
-        repo.create_ref(version_name=new_version_name)
-        repo.create_release(release_notes=release_notes, version_name=new_version_name)
-        if not is_hotfix:  # Don't merge hotfixes to dev
-            repo.update_develop()
 
     def _bump_repos_set(self, msg: Message, stage: helpers.Stages) -> Optional[str]:
         """Transition the entire set of updated projects to the given stage
@@ -226,54 +229,6 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         self._bot.add_reaction(msg, "white_check_mark")
         return f'{bumped_counter} / {len(self._get_project_names())} repos updated since last release.'
         # return "I have sent your sealed version set to the UAT channel. Awaiting their approval."
-
-    def _fail(self, key: str, msg: Message, receiver: Identifier, stage: helpers.Stages, **kwargs) -> None:
-        """A helper method that simply sends an error message and logs it
-
-        :param msg: the incoming message that prompted the failure
-        :param receiver: identifier for who will receive the failure message
-        """
-        self._bot.remove_reaction(msg, "hourglass")
-        self._bot.add_reaction(msg, "x")
-        self.log.debug('Entering _fail: key=%s, stage=%s', key, stage)
-        import sys
-        if sys.exc_info()[0] is not None:
-            self.log.exception('An exception occurred while performing a release')
-
-        try:
-            msg = self.error_messages[key]
-        except KeyError:
-            self.log.error('Unknown error raised when release stage=%s, key=%s', stage, key)
-            msg = MISSING_ERROR_MESSAGE.format(stage=stage, key=key)
-        message_string = msg.format(**kwargs)
-        self.log.warning(message_string)
-        return self.send_card(to=receiver, body=message_string, color='red',)
-
-    def _get_project_names(self) -> List[str]:
-        """Get the list of project names from the configuration"""
-        return list(self.config['projects'])
-
-    def _get_project_key(self, repo: Repo) -> str:
-        """Get the Jira project key for the given repo name"""
-        # TODO: catch `KeyError`
-        return self.config['projects'][repo.name]
-
-    def _get_jira_config(self) -> dict:
-        """Return data required for initializing JiraClient"""
-        return {
-            'URL': self.config['JIRA_URL'],
-            'USER': self.config['JIRA_USER'],
-            'PASS': self.config['JIRA_PASS'],
-            'TEMPLATE_DIR': self.config['TEMPLATE_DIR'],
-        }
-
-    def _get_git_config(self) -> dict:
-        """Return data required for initializing RepoManager"""
-        return {
-            'REPOS_ROOT': self.config['REPOS_ROOT'],
-            'GITHUB_TOKEN': self.config['GITHUB_TOKEN'],
-            'PROJECT_NAMES': self._get_project_names(),
-        }
 
     def _get_version_card(self, repo: Repo, release_type: str) -> Dict:
         self.log.debug('%s: getting version card', repo.name)
@@ -364,22 +319,66 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         # Need the merge commit sha as part of the version metadata
         Release._finalize_repo(new_version_name, repo, release_notes, is_hotfix)
 
-    def _setup_repos(self):
-        """Clone the projects in the configuration into the `REPOS_ROOT` if they do not exist already."""
-        try:
-            os.makedirs(self.config['REPOS_ROOT'])
-        except OSError as exc:
-            # If the error is that the directory already exists, we don't care about it
-            if exc.errno != errno.EEXIST:
-                raise exc
+    def _fail(self, key: str, msg: Message, receiver: Identifier, stage: helpers.Stages, **kwargs) -> None:
+        """A helper method that simply sends an error message and logs it
 
-        for project in self.config['projects']:
-            if not os.path.exists(os.path.join(self.config['REPOS_ROOT'], project)):
-                # Possible race condition if folder somehow gets created between check and creation
-                helpers.run_subprocess(
-                    ['git', 'clone', f"git@github.com:{project}.git", project],
-                    cwd=self.config['REPOS_ROOT'],
-                )
+        :param msg: the incoming message that prompted the failure
+        :param receiver: identifier for who will receive the failure message
+        """
+        self._bot.remove_reaction(msg, "hourglass")
+        self._bot.add_reaction(msg, "x")
+        self.log.debug('Entering _fail: key=%s, stage=%s', key, stage)
+        import sys
+        if sys.exc_info()[0] is not None:
+            self.log.exception('An exception occurred while performing a release')
+
+        try:
+            msg = self.error_messages[key]
+        except KeyError:
+            self.log.error('Unknown error raised when release stage=%s, key=%s', stage, key)
+            msg = MISSING_ERROR_MESSAGE.format(stage=stage, key=key)
+        message_string = msg.format(**kwargs)
+        self.log.warning(message_string)
+        return self.send_card(to=receiver, body=message_string, color='red',)
+
+    def _get_project_names(self) -> List[str]:
+        """Get the list of project names from the configuration"""
+        return list(self.config['projects'])
+
+    def _get_project_key(self, repo: Repo) -> str:
+        """Get the Jira project key for the given repo name"""
+        return self.config['projects'][repo.name]
+
+    def _get_jira_config(self) -> dict:
+        """Return data required for initializing JiraClient"""
+        return {
+            'URL': self.config['JIRA_URL'],
+            'USER': self.config['JIRA_USER'],
+            'PASS': self.config['JIRA_PASS'],
+            'TEMPLATE_DIR': self.config['TEMPLATE_DIR'],
+        }
+
+    def _get_git_config(self) -> dict:
+        """Return data required for initializing RepoManager"""
+        return {
+            'REPOS_ROOT': self.config['REPOS_ROOT'],
+            'GITHUB_TOKEN': self.config['GITHUB_TOKEN'],
+            'PROJECT_NAMES': self._get_project_names(),
+        }
+
+    @staticmethod
+    def _finalize_repo(
+            new_version_name: str,
+            repo: Repo,
+            release_notes: str,
+            is_hotfix: bool = False,
+    ) -> None:
+        """Create a git tag marking the release and push release notes to GitHub"""
+        repo.create_tag(tag_name=new_version_name)
+        repo.create_ref(version_name=new_version_name)
+        repo.create_release(release_notes=release_notes, version_name=new_version_name)
+        if not is_hotfix:  # Don't merge hotfixes to dev
+            repo.update_develop()
 
     @staticmethod
     def _get_merge_summary(repo: Repo) -> str:
