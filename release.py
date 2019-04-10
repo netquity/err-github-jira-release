@@ -73,12 +73,14 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         'no_jira_issues': '{repo}: no <{issues_url}|Jira issues> found ({merge_summary}).',
         'invalid_transition': 'Invalid stage transition attempted when bumping {repo}.',
         'invalid_version': 'Invalid pre_version given when bumping {repo}.',
-        'none_updated': '{active_stage}: no projects updated.',
+        'updated_failed': '{active_stage}: found projects to update but failed to update them.',
+        'nothing_to_update': '{active_stage}: no updated projects found.',
         'mismatched_updates': (
             '{active_stage}: number of updated projects ({updated_projects}) '
             'does not match number of bumped projects ({bumped_counter}).'
         ),
-        'unknown_git_error': '{repo}: unknown error encountered when performing git operations.'
+        'unknown_git_error': '{repo}: unknown error encountered when performing git operations.',
+        'unknown_error': '{repo}: unknown error encountered.',
     }
 
     def activate(self):
@@ -174,6 +176,9 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         fail = partial(self._fail, msg=msg, receiver=msg.frm, stage=stage)
         bumped_counter = 0
         updated_repos = self.git.get_repos_in_stage(stage)
+        if not updated_repos:
+            self._bot.remove_reaction(msg, "hourglass")
+            fail('nothing_to_update', active_stage=stage.verb)
         for repo in updated_repos:
             try:
                 release_type = self.jira.get_release_type(self._get_project_key(repo))
@@ -202,9 +207,11 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
                 fail('invalid_version', repo=repo.name)
             except GitCommandError:
                 return fail('unknown_git_error', repo=repo.name)
+            except:  # noqa: E722 pylint:disable=bare-except
+                return fail('unknown_error', repo=repo.name)
 
-        if not bumped_counter > 0 and updated_repos:
-            return fail('none_updated', active_stage=stage.verb)
+        if bumped_counter == 0 and updated_repos:
+            return fail('updated_failed', active_stage=stage.verb)
         if bumped_counter != len(updated_repos):
             return fail(
                 'mismatched_updates',
