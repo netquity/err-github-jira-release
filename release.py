@@ -333,13 +333,13 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             getattr(repo.get_prerelease_tag(min_version=final), 'name', None),
         )
         if stage == helpers.Stages.SIGNED:
-            self.prepare_final(repo, new_version_name)
+            self._prepare_final(repo, new_version_name)
         else:
             # TODO: if stage == sign, create Jira version and set_fix_version on tickets; also get changelog
             repo.tag_develop(tag_name=new_version_name)
         return new_version_name
 
-    def prepare_final(self, repo: Repo, new_version_name: str) -> None:
+    def _prepare_final(self, repo: Repo, new_version_name: str) -> None:
         """Create the Jira version and get the changelog from it before pushing tags to GitHub"""
         key = self._get_project_key(repo)
         jira_version = self.jira.finalize_issues(key, new_version_name)
