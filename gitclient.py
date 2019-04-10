@@ -531,13 +531,16 @@ class Repo(namedtuple('Repo', ['path', 'github', 'name'])):
         return rev_hash
 
     def get_compare_url(self) -> str:
-        """Get the URL to compare the latest final with the latest prerelease on GitHub"""
+        """Get the URL to compare versions on GitHub
+
+        If the latest tag is a final, compare the last two finals; otherwise, compare the last prerelease with the
+        latest final.
+        """
         final = self.get_final_tag()
-        return self.github.compare(
-            base=final.name,
-            # requires that a pre-release exists since last final
-            head=self.get_prerelease_tag(min_version=final).name,
-        ).html_url
+        latest = Repo.get_latest_tag(self)
+        if final == latest:  # compare the last two final version
+            final = next((tag for tag in Repo._get_final_tags(self) if tag != latest))
+        return self.github.compare(base=final.name, head=latest.name).html_url
 
     def get_merged_prs_url(self) -> str:
         """Get the URL to see merged PRs since the latest final on GitHub"""
@@ -670,6 +673,11 @@ class Repo(namedtuple('Repo', ['path', 'github', 'name'])):
         logger.debug('%s: %s/%s tags validated', repo.name, len(tags), len(tag_lines))
         # sort using `packaging.version` with most recent first
         return sorted(tags, key=lambda tag: cached_parse(tag.name), reverse=True)
+
+    @staticmethod
+    def _get_final_tags(repo: 'Repo') -> List['Tag']:
+        """Get just the final tags i.e. filter out prerelease tags"""
+        return [tag for tag in Repo._get_tags(repo) if RepoTag.is_final_name(tag.name)]
 
     @classmethod
     def get_latest_tag(cls, repo: 'Repo', find_final: bool = True) -> Optional[RepoTag]:
