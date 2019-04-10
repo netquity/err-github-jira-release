@@ -170,7 +170,8 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         - git: create tag and ref
         - backend: send cards and messages
         """
-        fail = partial(self._fail, identifier=msg.frm, stage=stage)
+        self._bot.add_reaction(msg, "hourglass")
+        fail = partial(self._fail, msg=msg, receiver=msg.frm, stage=stage)
         bumped_counter = 0
         updated_repos = self.git.get_repos_in_stage(stage)
         for repo in updated_repos:
@@ -214,11 +215,19 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         # FIXME: doesn't work as a yield for `send` because need to send to different channels
         # yield f"{len(card_dict)} repos updated: \n\t• " + '\n\t• '.join(list(card_dict))
 
+        self._bot.remove_reaction(msg, "hourglass")
+        self._bot.add_reaction(msg, "white_check_mark")
         return f'{bumped_counter} / {len(self._get_project_names())} repos updated since last release.'
         # return "I have sent your sealed version set to the UAT channel. Awaiting their approval."
 
-    def _fail(self, key: str, identifier: Identifier, stage: helpers.Stages, **kwargs) -> None:
-        """A helper method that simply sends an error message and logs it"""
+    def _fail(self, key: str, msg: Message, receiver: Identifier, stage: helpers.Stages, **kwargs) -> None:
+        """A helper method that simply sends an error message and logs it
+
+        :param msg: the incoming message that prompted the failure
+        :param receiver: identifier for who will receive the failure message
+        """
+        self._bot.remove_reaction(msg, "hourglass")
+        self._bot.add_reaction(msg, "x")
         self.log.debug('Entering _fail: key=%s, stage=%s', key, stage)
         import sys
         if sys.exc_info()[0] is not None:
@@ -231,7 +240,7 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
             msg = MISSING_ERROR_MESSAGE.format(stage=stage, key=key)
         message_string = msg.format(**kwargs)
         self.log.warning(message_string)
-        return self.send_card(to=identifier, body=message_string, color='red',)
+        return self.send_card(to=receiver, body=message_string, color='red',)
 
     def _get_project_names(self) -> List[str]:
         """Get the list of project names from the configuration"""
