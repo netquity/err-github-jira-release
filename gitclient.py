@@ -267,25 +267,31 @@ class RepoManager:
             for project_name in config['PROJECT_NAMES']
         ]
 
-    def get_updated_repos(self, since_final: bool = True) -> List['Repo']:
-        """Get a list of the `origin` repos that have commits to develop since either the last final or prerelease
-
-        :param since_final: if True, look for updates since the latest final tag; otherwise, since latest prerelease
-        """
-        updated_repos = [
-            repo for repo in self.repos
-            if repo.is_updated_since(since_final)
-        ]
-        logger.debug('Got updated repos: %s/%s updated', len(updated_repos), len(self.repos))
-        return updated_repos
-
     def get_repos_in_stage(self, stage: helpers.Stages) -> Optional[List['Repo']]:
-        """Get a list of repos for which the most recent tag is in the given stage"""
+        """Get a list of repos for which the most recent tag is in the given stage
+
+        For the first stage, we need all repos that have commits since the last final.
+
+        If *not* at the beginning of a release cycle, we need all repos that were successfully transitioned into the
+        most recent stage. i.e. if we're ready to sign/finalize a release, we do that with all the repos that were sent
+        (which is a stage name) to UAT
+        """
         lowered_stage = stage.verb.lower()
-        repos = [
-            repo for repo in self.repos
-            if lowered_stage in Repo.get_latest_tag(repo, False).name.lower()
-        ]
+
+        def is_updated_since_final(repo):
+            """At the seal stage, only get repos which have any updates at all since last final"""
+            return repo.is_updated_since(since_final=True)
+
+        def is_in_correct_stage(repo):
+            """Other release stages require only repos in a particular stage"""
+            return lowered_stage in Repo.get_latest_tag(repo, False).name.lower()
+
+        if stage == helpers.Stages.SEALED:
+            test = is_updated_since_final
+        else:
+            test = is_in_correct_stage
+
+        repos = [repo for repo in self.repos if test(repo)]
         logger.debug('Got repos in stage=%s: %s/%s updated', stage.name, len(repos), len(self.repos))
         return repos
 
@@ -564,7 +570,7 @@ class Repo(namedtuple('Repo', ['path', 'github', 'name'])):
         )
 
     def is_updated_since(self, since_final: bool = True) -> bool:
-        """Check if the given origin has commits to develop since either the last final or prerelease"""
+        """Check if the repo has commits to develop since either the last final or prerelease"""
         return self._get_merge_count_since(
             Repo.get_latest_tag(self, since_final)
         ) > 0

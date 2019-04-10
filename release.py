@@ -172,28 +172,15 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         """
         # TODO: need to propagate errors and revert all changes if anything fails
         fail = partial(self._fail, identifier=msg.frm, stage=stage)
-
-        if stage not in [helpers.Stages.SEALED, helpers.Stages.SENT, helpers.Stages.SIGNED]:
-            raise ValueError('Given stage=%s not supported.' % stage)
-
-        # For the first stage, we need all repos that have commits since the last final
-        if stage == helpers.Stages.SEALED:
-            updated_repos = self.git.get_updated_repos(not stage == helpers.Stages.SEALED)
-        else:
-            # If *not* at the beginning of a release cycle, we need all repos that were successfully transitioned
-            # into the most recent stage. i.e. if we're ready to sign/finalize a release, we do that with all the
-            # repos that were sent (which is a stage name) to UAT
-            updated_repos = self.git.get_repos_in_stage(helpers.Stages(stage.value - 1))
-
         bumped_counter = 0
+        updated_repos = self.git.get_repos_in_stage(stage)
         for repo in updated_repos:
             # TODO: wrap in a try/except and roll back repos and jira on any kind of failure
             # TODO: these bumps can all be done asynchronously, they don't depend on each other
             try:
                 release_type = self.jira.get_release_type(self._get_project_key(repo))
                 new_version = self._bump_repo_tags(repo, stage)
-                # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time:
-                # https://api.slack.com/docs/message-attachments#attachment_limits
+                # CAUTION: Slack STRONGLY warns against sending more than 20 cards at a time: http://bitly.com/2uWMP8T
                 self._send_version_card(
                     msg.frm if stage == helpers.Stages.SEALED
                     else self.build_identifier(self.config['UAT_CHANNEL_IDENTIFIER']),
