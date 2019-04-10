@@ -170,13 +170,10 @@ class Release(BotPlugin):  # pylint:disable=too-many-ancestors
         - git: create tag and ref
         - backend: send cards and messages
         """
-        # TODO: need to propagate errors and revert all changes if anything fails
         fail = partial(self._fail, identifier=msg.frm, stage=stage)
         bumped_counter = 0
         updated_repos = self.git.get_repos_in_stage(stage)
         for repo in updated_repos:
-            # TODO: wrap in a try/except and roll back repos and jira on any kind of failure
-            # TODO: these bumps can all be done asynchronously, they don't depend on each other
             try:
                 release_type = self.jira.get_release_type(self._get_project_key(repo))
                 new_version = self._bump_repo_tags(repo, stage)
