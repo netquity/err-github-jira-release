@@ -276,8 +276,6 @@ class RepoManager:
         most recent stage. i.e. if we're ready to sign/finalize a release, we do that with all the repos that were sent
         (which is a stage name) to UAT
         """
-        lowered_stage = stage.verb.lower()
-
         def is_updated_since_final(repo):
             """At the seal stage, only get repos which have any updates at all since last final"""
             return repo.is_updated_since(since_final=True)
@@ -289,6 +287,7 @@ class RepoManager:
         if stage == helpers.Stages.SEALED:
             test = is_updated_since_final
         else:
+            lowered_stage = helpers.Stages(stage.value - 1).verb.lower()
             test = is_in_correct_stage
 
         repos = [repo for repo in self.repos if test(repo)]
@@ -539,7 +538,8 @@ class Repo(namedtuple('Repo', ['path', 'github', 'name'])):
         final = self.get_final_tag()
         latest = Repo.get_latest_tag(self)
         if final == latest:  # compare the last two final version
-            final = next((tag for tag in Repo._get_final_tags(self) if tag != latest))
+            final = next((tag for tag in Repo._get_final_tags(self) if tag.name != latest.name))
+        logger.debug('%s: comparing base=%s and head=%s on GitHub', self.name, final.name, latest.name)
         return self.github.compare(base=final.name, head=latest.name).html_url
 
     def get_merged_prs_url(self) -> str:
