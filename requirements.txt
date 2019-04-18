@@ -1,4 +1,6 @@
 Jinja2==2.10
 PyGithub==1.29
 jira==1.0.7
+packaging==19.0
+pyparsing==2.4.0
 semver==2.8.1
