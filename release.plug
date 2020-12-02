@@ -1,6 +1,6 @@
 [Core]
 Name = release
-Module = release.py
+Module = release
 
 [Documentation]
 Description = Automate releases between Jira and GitHub
